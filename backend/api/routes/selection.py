@@ -125,21 +125,89 @@ async def navigate_to_section(
         }
     }
 
-@router.get("/context/{doc_id}/{section_id}")
-async def get_section_context(
-    doc_id: str,
-    section_id: str,
-    context_size: int = Query(default=2, ge=0, le=5)
-):
-    """Get section with surrounding context"""
-    doc = indexer.get_document(doc_id)
+# @router.get("/context/{doc_id}/{section_id}")
+# async def get_section_context(
+#     doc_id: str,
+#     section_id: str,
+#     context_size: int = Query(default=2, ge=0, le=5)
+# ):
+#     """Get section with surrounding context"""
+#     doc = indexer.get_document(doc_id)
     
-    if not doc:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Document {doc_id} not found"
+#     if not doc:
+#         raise HTTPException(
+#             status_code=404,
+#             detail=f"Document {doc_id} not found"
+#         )
+    
+#     # Find section index
+#     section_idx = None
+#     for i, section in enumerate(doc['sections']):
+
+
+
+
+# backend/api/routes/selection.py (continued)
+
+@router.post("/insights")
+async def generate_insights(request: SelectionRequest):
+    """Generate insights from selected text and related sections"""
+    from backend.utils.chat_with_llm import LLMClient
+    
+    # First find related sections
+    related_response = await find_related_sections(request)
+    
+    if not related_response.related_sections:
+        return JSONResponse(
+            content={
+                "selected_text": request.selected_text,
+                "insights": [],
+                "error": "No related sections found"
+            }
         )
     
-    # Find section index
-    section_idx = None
-    for i, section in enumerate(doc['sections']):
+    # Generate insights using LLM
+    llm_client = LLMClient()
+    insights = await llm_client.generate_insights(
+        request.selected_text,
+        related_response.related_sections
+    )
+    
+    return {
+        "selected_text": request.selected_text,
+        "related_sections": related_response.related_sections,
+        "insights": insights
+    }
+
+@router.post("/audio")
+async def generate_audio_summary(request: SelectionRequest):
+    """Generate audio summary from selected text and related sections"""
+    from backend.utils.generate_audio import AudioGenerator
+    
+    # First find related sections
+    related_response = await find_related_sections(request)
+    
+    if not related_response.related_sections:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "error": "No related sections found to generate audio"
+            }
+        )
+    
+    # Generate summary text
+    summary_text = "\n".join([
+        f"From {section.doc_title}, section {section.heading}: {section.snippet}"
+        for section in related_response.related_sections
+    ])
+    
+    # Generate audio
+    audio_generator = AudioGenerator()
+    audio_path = await audio_generator.generate_audio(
+        f"Summary of related content for: {request.selected_text}\n\n{summary_text}"
+    )
+    
+    return {
+        "audio_path": audio_path,
+        "duration_seconds": audio_generator.get_audio_duration(audio_path)
+    }
