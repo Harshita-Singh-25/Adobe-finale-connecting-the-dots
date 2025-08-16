@@ -30,8 +30,8 @@ RUN python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords')"
 
 # Set environment variables
 ENV PYTHONPATH=/app
-ENV ADOBE_EMBED_API_KEY=${ADOBE_EMBED_API_KEY}
-ENV GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
+#ENV ADOBE_EMBED_API_KEY=${ADOBE_EMBED_API_KEY}
+#ENV GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
 
 EXPOSE 8080
 

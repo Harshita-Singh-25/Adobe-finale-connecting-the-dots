@@ -132,3 +132,17 @@ class BatchSelectionResponse(BaseModel):
     batch_results: List[BatchResult]
     total_processed: int
     successful: int
+
+class SelectionRequest(BaseModel):
+    selected_text: str = Field(..., min_length=5)
+    current_doc_id: Optional[str] = None
+    context_before: Optional[str] = None
+    context_after: Optional[str] = None
+    page_num: Optional[int] = None
+
+class RelatedSectionsResponse(BaseModel):
+    selected_text: str
+    current_doc_id: Optional[str]
+    related_sections: List[RelatedSection]
+    processing_time: float
+    from_cache: bool = False

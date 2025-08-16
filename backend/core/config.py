@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     USE_GPU: bool = False
     
     # External APIs (from environment)
-    ADOBE_EMBED_API_KEY: Optional[str] = os.getenv("ADOBE_EMBED_API_KEY")
+    #ADOBE_EMBED_API_KEY: Optional[str] = os.getenv("ADOBE_EMBED_API_KEY")
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "gemini")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
