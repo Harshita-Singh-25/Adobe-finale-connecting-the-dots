@@ -139,6 +139,7 @@ class SelectionRequest(BaseModel):
     context_before: Optional[str] = None
     context_after: Optional[str] = None
     page_num: Optional[int] = None
+    top_k: Optional[int] = Field(default=None, ge=1, le=10)  # Add this
 
 class RelatedSectionsResponse(BaseModel):
     selected_text: str

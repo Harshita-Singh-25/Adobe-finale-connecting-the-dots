@@ -52,7 +52,7 @@ async def find_related_sections(request: SelectionRequest):
     results = search_engine.search_related_sections(
         selected_text=request.selected_text,
         current_doc_id=request.current_doc_id,
-        top_k=request.top_k or settings.TOP_K_SECTIONS
+        top_k=request.top_k if request.top_k is not None else settings.TOP_K_SECTIONS
     )
     
     # Format results
