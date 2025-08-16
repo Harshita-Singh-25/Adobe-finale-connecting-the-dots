@@ -1,1 +1,12 @@
 @import 'tailwindcss';
+
+/* Smooth tooltip transitions */
+.tooltip-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.tooltip-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: all 0.2s ease;
+}
