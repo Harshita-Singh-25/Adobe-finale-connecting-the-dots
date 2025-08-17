@@ -143,6 +143,16 @@ class SemanticSearchEngine:
                 selected_text,
                 max_sentences=settings.SNIPPET_LENGTH
             )
+
+            print(f"\nSearching for: '{selected_text}'")
+            print(f"Total sections in index: {self.index.ntotal}")
+
+            if distances is not None:
+                print("Top raw matches:")
+                for i, (idx, score) in enumerate(zip(indices[0], distances[0])):
+                    section = self.section_metadata[idx]
+                    print(f"{i+1}. {section['heading']} (score: {score:.3f})")
+
             
             results.append({
                 'doc_id': doc_id,

@@ -197,4 +197,28 @@ Keep insights concise, specific, and grounded in the provided content only."""
             elif "example" in line.lower():
                 current_category = "examples"
             elif "extension" in line.lower():
-                current_
+                current_category = "extensions"
+            elif "did you know" in line.lower():
+                current_category = "did_you_know"
+            elif line.startswith(('-', '•', '*')) and current_category:
+                # Extract insight point
+                insight = line.lstrip('-•* ').strip()
+                if insight:
+                    insights[current_category].append(insight)
+        
+        return insights
+
+# Global LLM client instance
+llm_client = LLMClient()
+
+async def chat_with_llm(prompt: str, system_prompt: Optional[str] = None) -> str:
+    """Simple interface for LLM calls"""
+    if system_prompt is None:
+        system_prompt = "You are a helpful AI assistant."
+    
+    return await llm_client._call_llm(system_prompt, prompt)
+
+async def generate_insights_for_selection(selected_text: str, 
+                                        related_sections: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Generate insights for selected text and related sections"""
+    return await llm_client.generate_insights(selected_text, related_sections)

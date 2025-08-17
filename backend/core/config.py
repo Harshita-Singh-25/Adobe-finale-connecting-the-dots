@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     
     # Search settings
     TOP_K_SECTIONS: int = 5
-    MIN_SIMILARITY_SCORE: float = 0.65
+    MIN_SIMILARITY_SCORE: float = 0.3
     SNIPPET_LENGTH: int = 3  # sentences
     CONTEXT_WINDOW: int = 2  # sentences before/after
     
