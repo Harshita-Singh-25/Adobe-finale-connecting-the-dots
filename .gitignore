@@ -1,0 +1,88 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+build/
+.cache/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.*.local
+.env.local
+firebase-service-account.json
+config/firebaseKey.json
+
+# Logs
+logs
+*.log
+*.log.*
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+*.swp
+
+# IDE/editor files
+.vscode/
+.idea/
+*.iml
+
+# Docker
+docker/data/
+*.pid
+*.seed
+*.pid.lock
+
+# Backend specific
+backend/uploads/
+backend/temp/
+backend/__pycache__/
+
+# Testing
+coverage/
+jest-html-reporters-*.html
+*.lcov
+
+# Documentation generated files
+docs/_build/
+docs/api/
+
+# Firebase cache
+.firebase/
+.firebaserc
+firebase-debug.log
+
+# MongoDB local data (if using local db dumps for dev)
+*.dump
+*.bson
+*.json
+
+# Python (if used for scripts)
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+
+# Security
+secrets/
+keys/
+*.pem
+*.key
+*.crt
