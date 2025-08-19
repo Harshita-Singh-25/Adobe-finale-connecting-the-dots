@@ -22,6 +22,16 @@ class DocumentIndexer:
         self.index_file = settings.PROCESSED_DIR / "document_index.json"
         self.load_index()
     
+    async def initialize(self):
+        """Initialize the document indexer"""
+        # Load any existing processed documents
+        self.load_index()
+        print(f"DocumentIndexer initialized with {len(self.indexed_docs)} documents")
+    
+    async def cleanup(self):
+        """Cleanup and save index"""
+        self.save_index()
+    
     def load_index(self):
         """Load existing document index from file"""
         try:
@@ -94,14 +104,17 @@ class DocumentIndexer:
         # Extract PDF content
         pdf_data = await self.pdf_processor.extract_pdf_content(file_path)
         
-        # Process sections
+        # Process sections and add snippets
         sections = []
         for section_data in pdf_data['sections']:
             section_id = str(uuid.uuid4())
             
+            # Clean content
+            content = self.text_processor.clean_text(section_data['content'])
+            
             # Extract snippets from content
             snippets = self.text_processor.extract_snippets(
-                section_data['content'],
+                content,
                 max_sentences=settings.SNIPPET_LENGTH
             )
             
@@ -110,12 +123,12 @@ class DocumentIndexer:
                 'doc_id': doc_id,
                 'heading': section_data['heading'],
                 'level': section_data['level'],
-                'content': section_data['content'],
+                'content': content,
                 'page_num': section_data['page_num'],
                 'start_page': section_data.get('start_page', section_data['page_num']),
                 'end_page': section_data.get('end_page', section_data['page_num']),
                 'snippets': snippets,
-                'word_count': len(section_data['content'].split())
+                'word_count': len(content.split())
             }
             sections.append(section)
         

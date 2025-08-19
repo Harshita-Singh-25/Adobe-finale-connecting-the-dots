@@ -5,14 +5,41 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vite + React</title>
-    <script src="https://documentcloud.adobe.com/view-sdk/main.js"></script>
-    <script>
-      document.addEventListener("adobe_dc_view_sdk.ready", () => {
-        console.log("Adobe PDF Embed API ready");
-        window.AdobeDC = window.AdobeDC || {};
-        window.AdobeDC.ready = true;
+     <script src="https://documentservices.adobe.com/view-sdk/viewer.js"></script>
+        <script>
+      // Global initialization tracking
+      window.adobeDCView = window.adobeDCView || {
+        ready: false,
+        queue: []
+      };
+
+      // Handle Adobe API ready event
+      document.addEventListener("adobe_dc_view_sdk.ready", function() {
+        console.log("Adobe PDF Embed API is ready");
+        window.adobeDCView.ready = true;
+        
+        // Process any queued initialization calls
+        window.adobeDCView.queue.forEach(function(callback) {
+          try {
+            callback();
+          } catch (error) {
+            console.error('Error in queued callback:', error);
+          }
+        });
+        window.adobeDCView.queue = [];
       });
+
+      // Fallback: check if Adobe is already loaded
+      setTimeout(function() {
+        if (typeof window.AdobeDC !== 'undefined' && !window.adobeDCView.ready) {
+          console.log("Adobe PDF Embed API detected without ready event");
+          window.adobeDCView.ready = true;
+          document.dispatchEvent(new CustomEvent("adobe_dc_view_sdk.ready"));
+        }
+      }, 2000);
     </script>
+    
+
   </head>
   <body>
     <div id="root"></div>

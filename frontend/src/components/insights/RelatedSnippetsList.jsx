@@ -1,13 +1,13 @@
 import React, { useContext, useEffect, useState, useCallback } from 'react';
 import { Button } from '../common/Button';
-import { Loader } from '../common/Loader';
+import  Loader  from '../common/Loader';
 import { Toast } from '../common/Toast';
 import { PDFContext } from '../../context/PDFContext';
 import { SelectionContext } from '../../context/SelectionContext';
 import { InsightsContext } from '../../context/InsightsContext';
-import { highlightText } from '../../utils/highlightText';
-import useSemanticSearch from '../../hooks/useSemanticSearch';
-import usePDFNavigation from '../../hooks/usePDFNavigation';
+import { highlightSearchTerms as highlightText } from '../../utils/highlightText';
+import {useSemanticSearch} from '../../hooks/useSemanticSearch';
+import {usePDFNavigation} from '../../hooks/usePDFNavigation';
 
 export const RelatedSnippetsList = () => {
   const { currentPDF, allDocuments } = useContext(PDFContext);

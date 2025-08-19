@@ -44,6 +44,10 @@ class PDFProcessor:
                 (r'^(Background|Methods|Results|Discussion)', 'H2'),
             ]
         }
+    
+    async def extract_pdf_content(self, file_path: Path) -> Dict[str, Any]:
+        """Main method to extract PDF content - this was missing!"""
+        return self.extract_document_structure(file_path)
         
     def extract_document_structure(self, pdf_path: Path) -> Dict[str, Any]:
         """Extract hierarchical structure from PDF"""
@@ -55,6 +59,10 @@ class PDFProcessor:
         
         # Extract sections with smart heading detection
         sections = self._extract_sections(doc, doc_id, title)
+        
+        # If no sections found, create a default section per page
+        if not sections:
+            sections = self._create_default_sections(doc, doc_id, title)
         
         # Build hierarchical structure
         structure = {
@@ -69,6 +77,30 @@ class PDFProcessor:
         doc.close()
         return structure
     
+    def _create_default_sections(self, doc: fitz.Document, doc_id: str, title: str) -> List[Dict]:
+        """Create default sections when no headings are detected"""
+        sections = []
+        
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            text = page.get_text()
+            
+            if text.strip():  # Only create section if page has content
+                section = {
+                    'section_id': f"{doc_id}_page_{page_num + 1}",
+                    'doc_id': doc_id,
+                    'doc_title': title,
+                    'level': 'H1',
+                    'heading': f"Page {page_num + 1}",
+                    'content': text.strip(),
+                    'page_num': page_num + 1,
+                    'start_page': page_num + 1,
+                    'end_page': page_num + 1
+                }
+                sections.append(section)
+        
+        return self._post_process_sections(sections)
+    
     def _generate_doc_id(self, pdf_path: Path) -> str:
         """Generate unique document ID"""
         content = pdf_path.read_bytes()
@@ -79,7 +111,9 @@ class PDFProcessor:
         # Try metadata first
         metadata = doc.metadata
         if metadata and metadata.get('title'):
-            return metadata['title']
+            title = metadata['title'].strip()
+            if title and len(title) > 3:
+                return title
         
         # Try first page large text
         if len(doc) > 0:
@@ -94,63 +128,120 @@ class PDFProcessor:
                 if block.get("type") == 0:  # Text block
                     for line in block.get("lines", []):
                         for span in line.get("spans", []):
-                            if span.get("size", 0) > max_size:
-                                max_size = span["size"]
-                                title_text = span.get("text", "").strip()
+                            text = span.get("text", "").strip()
+                            size = span.get("size", 0)
+                            if size > max_size and len(text) > 5 and len(text) < 100:
+                                max_size = size
+                                title_text = text
             
-            if title_text and len(title_text) > 5:
-                return title_text[:100]
+            if title_text:
+                return title_text
         
         # Fallback to filename
-        return pdf_path.stem.replace("_", " ").title()
+        return pdf_path.stem.replace("_", " ").replace("-", " ").title()
     
     def _extract_sections(self, doc: fitz.Document, doc_id: str, title: str) -> List[Dict]:
         """Extract sections with intelligent heading detection"""
         sections = []
         current_section = None
         section_counter = 0
+        all_text = ""
         
+        # Extract all text first
         for page_num, page in enumerate(doc):
-            text = page.get_text()
-            lines = text.split('\n')
+            page_text = page.get_text()
+            all_text += f"\n--- PAGE {page_num + 1} ---\n{page_text}"
+        
+        # Split into lines
+        lines = all_text.split('\n')
+        current_content = []
+        current_page = 1
+        
+        for line in lines:
+            line = line.strip()
             
-            for i, line in enumerate(lines):
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # Detect heading
-                heading_level = self._detect_heading(line, page, i)
-                
-                if heading_level:
-                    # Save previous section
-                    if current_section and current_section['content'].strip():
+            # Check for page markers
+            page_match = re.match(r'--- PAGE (\d+) ---', line)
+            if page_match:
+                current_page = int(page_match.group(1))
+                continue
+            
+            if not line:
+                if current_content:
+                    current_content.append("")
+                continue
+            
+            # Detect heading
+            heading_level = self._detect_heading_simple(line)
+            
+            if heading_level and len(line) > 5 and len(line) < 200:
+                # Save previous section
+                if current_section and current_content:
+                    content_text = ' '.join(current_content).strip()
+                    if len(content_text) > 50:  # Only save substantial sections
+                        current_section['content'] = content_text
                         sections.append(current_section)
-                    
-                    # Start new section
-                    section_counter += 1
-                    current_section = {
-                        'section_id': f"{doc_id}_s{section_counter}",
-                        'doc_id': doc_id,
-                        'doc_title': title,
-                        'level': heading_level,
-                        'heading': line,
-                        'content': "",
-                        'page_num': page_num + 1,
-                        'start_page': page_num + 1,
-                        'end_page': page_num + 1
-                    }
-                elif current_section:
-                    # Add content to current section
-                    current_section['content'] += " " + line
-                    current_section['end_page'] = page_num + 1
+                
+                # Start new section
+                section_counter += 1
+                current_section = {
+                    'section_id': f"{doc_id}_s{section_counter}",
+                    'doc_id': doc_id,
+                    'doc_title': title,
+                    'level': heading_level,
+                    'heading': line,
+                    'content': "",
+                    'page_num': current_page,
+                    'start_page': current_page,
+                    'end_page': current_page
+                }
+                current_content = []
+            else:
+                # Add content to current section
+                if current_section:
+                    current_content.append(line)
+                    current_section['end_page'] = current_page
         
         # Add last section
-        if current_section and current_section['content'].strip():
-            sections.append(current_section)
+        if current_section and current_content:
+            content_text = ' '.join(current_content).strip()
+            if len(content_text) > 50:
+                current_section['content'] = content_text
+                sections.append(current_section)
         
         # Post-process sections
         return self._post_process_sections(sections)
+    
+    def _detect_heading_simple(self, line: str) -> Optional[str]:
+        """Simplified heading detection"""
+        if len(line) < 3 or len(line) > 200:
+            return None
+            
+        # Check for numbered patterns
+        if re.match(r'^\d+\.?\s+[A-Z]', line):
+            return "H1"
+        if re.match(r'^\d+\.\d+\.?\s+', line):
+            return "H2"
+        if re.match(r'^\d+\.\d+\.\d+\.?\s+', line):
+            return "H3"
+            
+        # Check for keyword patterns
+        keywords = ['chapter', 'section', 'introduction', 'conclusion', 
+                   'abstract', 'summary', 'background', 'methods', 'results']
+        line_lower = line.lower()
+        for keyword in keywords:
+            if line_lower.startswith(keyword):
+                return "H1"
+        
+        # Check if line is all caps (common for headings)
+        if line.isupper() and len(line.split()) <= 10:
+            return "H2"
+            
+        # Check if starts with capital and has no period at end
+        if line[0].isupper() and not line.endswith('.') and len(line.split()) <= 15:
+            return "H3"
+        
+        return None
     
     def _detect_heading(self, line: str, page: fitz.Page, line_idx: int) -> Optional[str]:
         """Detect if a line is a heading using multiple heuristics"""
@@ -164,24 +255,27 @@ class PDFProcessor:
                     return level
         
         # Check formatting (font size, bold, etc.)
-        blocks = page.get_text("dict")
-        for block in blocks.get("blocks", []):
-            if block.get("type") == 0:
-                for b_line in block.get("lines", []):
-                    for span in b_line.get("spans", []):
-                        if line in span.get("text", ""):
-                            # Check if bold or larger font
-                            flags = span.get("flags", 0)
-                            is_bold = bool(flags & 2**4)
-                            size = span.get("size", 0)
-                            
-                            if is_bold or size > 14:
-                                if size > 18:
-                                    return "H1"
-                                elif size > 14:
-                                    return "H2"
-                                elif is_bold:
-                                    return "H3"
+        try:
+            blocks = page.get_text("dict")
+            for block in blocks.get("blocks", []):
+                if block.get("type") == 0:
+                    for b_line in block.get("lines", []):
+                        for span in b_line.get("spans", []):
+                            if line in span.get("text", ""):
+                                # Check if bold or larger font
+                                flags = span.get("flags", 0)
+                                is_bold = bool(flags & 2**4)
+                                size = span.get("size", 0)
+                                
+                                if is_bold or size > 14:
+                                    if size > 18:
+                                        return "H1"
+                                    elif size > 14:
+                                        return "H2"
+                                    elif is_bold:
+                                        return "H3"
+        except:
+            pass
         
         return None
     
@@ -196,7 +290,7 @@ class PDFProcessor:
             content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', content)
             
             # Skip too short sections
-            if len(content) < 50:
+            if len(content) < 30:
                 continue
             
             section['content'] = content

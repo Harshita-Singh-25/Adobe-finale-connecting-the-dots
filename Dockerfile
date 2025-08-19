@@ -1,45 +1,65 @@
-# Use official Python slim image
-FROM python:3.9-slim
+# ============================
+# Stage 1: Frontend Build
+# ============================
+FROM node:18-alpine as frontend-build
 
-# 1️⃣ Install system dependencies
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    gcc \
+WORKDIR /app/frontend
+
+# Install dependencies
+COPY frontend/package*.json ./
+RUN npm ci
+
+# Copy source and build
+COPY frontend/ ./
+RUN npm run build
+
+# ============================
+# Stage 2: Backend with Python
+# ============================
+FROM python:3.11 as backend   
+# use full image, not slim
+
+# Install system dependencies for ML + PyMuPDF
+RUN apt-get update && apt-get install -y \
+    build-essential \
     python3-dev \
-    libpoppler-cpp-dev \
+    cmake \
+    git \
+    curl \
     pkg-config \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# 2️⃣ Set workdir
 WORKDIR /app
 
-# 3️⃣ Copy requirements first to leverage Docker cache
+# Copy Python requirements and install dependencies
 COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt \
+    --extra-index-url https://download.pytorch.org/whl/cpu
 
-# 4️⃣ Install Python dependencies with increased timeout
-# First install typing-extensions explicitly with correct name
-RUN pip install --no-cache-dir --default-timeout=100 \
-    typing-extensions==4.12.2 && \
-    pip install --no-cache-dir --default-timeout=100 \
-    torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir --default-timeout=100 -r requirements.txt
+# Download NLTK data
+RUN python -c "import nltk; nltk.download('punkt', quiet=True); nltk.download('stopwords', quiet=True)"
 
-# 5️⃣ Pre-download models
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')" && \
-    python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords')"
+# Copy backend source
+COPY backend/ backend/
+COPY data/ data/
 
-# 6️⃣ Copy application code
-COPY . .
+# Copy built frontend into backend static
+COPY --from=frontend-build /app/frontend/dist /app/backend/static
 
-# 7️⃣ Create data directories
-RUN mkdir -p /app/data/uploads \
-    /app/data/processed \
-    /app/data/embeddings \
-    /app/data/cache
+# Create runtime directories
+RUN mkdir -p data/uploads data/processed data/embeddings data/cache
 
-# 8️⃣ Set environment variables
+# Env + port
 ENV PYTHONPATH=/app
 EXPOSE 8080
 
-# 9️⃣ Run the application
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s \
+  CMD curl -f http://localhost:8080/api/health/health || exit 1
+
+# Start backend
 CMD ["python", "-m", "backend.main"]

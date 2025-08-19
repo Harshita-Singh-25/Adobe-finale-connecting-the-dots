@@ -1,91 +1,93 @@
 # backend/utils/text_processing.py
 import re
-from typing import List, Tuple
 import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
+from typing import List, Dict, Any
+from pathlib import Path
 
-# Download NLTK data
+# Download required NLTK data
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
     nltk.download('punkt', quiet=True)
 
-try:
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('stopwords', quiet=True)
-
 class TextProcessor:
-    """Handles text processing utilities"""
+    """Text processing utilities for document analysis"""
     
-    @staticmethod
-    def clean_text(text: str) -> str:
+    def __init__(self):
+        pass
+    
+    def extract_snippets(self, text: str, max_sentences: int = 3) -> List[str]:
+        """Extract meaningful snippets from text"""
+        try:
+            sentences = nltk.sent_tokenize(text)
+            
+            # Clean sentences
+            clean_sentences = []
+            for sent in sentences:
+                sent = sent.strip()
+                if len(sent) > 20:  # Filter out too short sentences
+                    clean_sentences.append(sent)
+            
+            # Return first few sentences as snippets
+            if len(clean_sentences) <= max_sentences:
+                return clean_sentences
+            
+            # Take first few sentences
+            snippets = clean_sentences[:max_sentences]
+            
+            return snippets
+            
+        except Exception as e:
+            print(f"Error extracting snippets: {e}")
+            # Fallback: split by periods
+            sentences = text.split('.')
+            clean_sentences = [s.strip() + '.' for s in sentences if len(s.strip()) > 20]
+            return clean_sentences[:max_sentences]
+    
+    def clean_text(self, text: str) -> str:
         """Clean and normalize text"""
-        if not text:
-            return ""
+        # Remove extra whitespace
+        text = re.sub(r'\s+', ' ', text)
         
         # Remove special characters
-        text = re.sub(r'[^\w\s-]', ' ', text)
-        # Normalize whitespace
-        text = re.sub(r'\s+', ' ', text).strip()
-        return text.lower()
+        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+        
+        # Remove page numbers and headers/footers
+        lines = text.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            
+            # Skip page numbers
+            if re.match(r'^\d+$', line):
+                continue
+                
+            # Skip common header/footer patterns
+            if re.match(r'^(page \d+|chapter \d+|\d+\s*$)', line.lower()):
+                continue
+            
+            if len(line) > 5:
+                cleaned_lines.append(line)
+        
+        return ' '.join(cleaned_lines).strip()
     
-    @staticmethod
-    def extract_key_phrases(text: str, top_n: int = 5) -> List[Tuple[str, float]]:
-        """Extract key phrases from text using TF-IDF"""
-        from sklearn.feature_extraction.text import TfidfVectorizer
+    def extract_key_phrases(self, text: str, max_phrases: int = 10) -> List[str]:
+        """Extract key phrases from text"""
+        # Simple keyword extraction
+        words = text.lower().split()
         
-        # Tokenize sentences
-        sentences = nltk.sent_tokenize(text)
-        if not sentences:
-            return []
+        # Remove common stop words
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'can', 'may', 'might', 'must', 'shall', 'this', 'that', 'these', 'those'}
         
-        # Create TF-IDF model
-        vectorizer = TfidfVectorizer(
-            ngram_range=(1, 2),
-            stop_words=stopwords.words('english'),
-            max_features=100
-        )
+        # Count word frequency
+        word_freq = {}
+        for word in words:
+            word = re.sub(r'[^\w]', '', word)
+            if len(word) > 3 and word not in stop_words:
+                word_freq[word] = word_freq.get(word, 0) + 1
         
-        try:
-            tfidf_matrix = vectorizer.fit_transform(sentences)
-            feature_names = vectorizer.get_feature_names_out()
-            
-            # Get top features
-            sums = tfidf_matrix.sum(axis=0)
-            data = []
-            
-            for col, term in enumerate(feature_names):
-                data.append((term, sums[0, col]))
-            
-            # Sort by score
-            data.sort(key=lambda x: x[1], reverse=True)
-            
-            return data[:top_n]
-        except:
-            # Fallback to simple word frequency
-            words = [word for word in word_tokenize(text) 
-                    if word.lower() not in stopwords.words('english')]
-            freq = nltk.FreqDist(words)
-            return freq.most_common(top_n)
-    
-    @staticmethod
-    def find_contradictions(text1: str, text2: str) -> List[str]:
-        """Find potential contradictions between two texts"""
-        contradictions = []
+        # Get top words
+        sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
         
-        # Simple contradiction detection
-        negation_words = {'not', 'no', 'never', 'none', 'neither', 'nor'}
-        
-        words1 = set(word_tokenize(text1.lower()))
-        words2 = set(word_tokenize(text2.lower()))
-        
-        # Check for negated concepts
-        for word in words1:
-            if word in negation_words:
-                for other_word in words2:
-                    if other_word not in negation_words and word in words1:
-                        contradictions.append(f"{word} vs {other_word}")
-        
-        return contradictions
+        return [word for word, freq in sorted_words[:max_phrases]]

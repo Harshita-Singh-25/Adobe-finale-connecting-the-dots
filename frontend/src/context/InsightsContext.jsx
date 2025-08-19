@@ -112,5 +112,6 @@ InsightsProvider.propTypes = {
 //   }
 //   return context;
 // };
+export { InsightsContext }; // Add this line at the end
 
 export default InsightsProvider;

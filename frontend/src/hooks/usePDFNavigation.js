@@ -1,96 +1,92 @@
-import { useState, useRef, useCallback } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
+import { useState, useRef, useCallback } from "react";
 
-// Set the worker path
-pdfjsLib.GlobalWorkerOptions.workerSrc = 
-  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
-
-export const usePDFNavigation = (initialPage = 1) => {
-  const [currentPage, setCurrentPage] = useState(initialPage);
+export const usePDFNavigation = () => {
+  const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [scale, setScale] = useState(1.0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const pdfContainerRef = useRef(null);
-  const pdfDocumentRef = useRef(null);
+  const adobeDCViewRef = useRef(null);
+  const apiRef = useRef(null);
 
-  // Initialize PDF document
-  const initializePDF = useCallback(async (pdfSource) => {
+  // Initialize PDF using Adobe Embed API
+  const initializePDF = useCallback((divId, pdfUrl, fileName = "Document.pdf") => {
     try {
       setIsLoading(true);
       setError(null);
-      
-      const loadingTask = pdfjsLib.getDocument(pdfSource);
-      const pdf = await loadingTask.promise;
-      
-      pdfDocumentRef.current = pdf;
-      setTotalPages(pdf.numPages);
-      setCurrentPage(1);
+
+      if (!window.AdobeDC) {
+        throw new Error("AdobeDC SDK not loaded");
+      }
+
+      const adobeDCView = new window.AdobeDC.View({ clientId: process.env.REACT_APP_ADOBE_CLIENT_ID, divId });
+      adobeDCViewRef.current = adobeDCView;
+
+      const preview = adobeDCView.previewFile(
+        {
+          content: { location: { url: pdfUrl } },
+          metaData: { fileName },
+        },
+        { embedMode: "SIZED_CONTAINER" }
+      );
+
+      preview.getAPIs().then((apis) => {
+        apiRef.current = apis;
+
+        // Listen to page changes
+        apis.getPDFMetadata().then((meta) => setTotalPages(meta.numPages));
+        apis.addEventListener("PAGE_VIEW", (event) => {
+          setCurrentPage(event.data.pageNumber);
+        });
+      });
     } catch (err) {
       setError(`Failed to load PDF: ${err.message}`);
-      console.error('PDF loading error:', err);
+      console.error("Adobe PDF loading error:", err);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  // Go to a specific page
   const goToPage = useCallback((pageNumber) => {
-    if (!pdfDocumentRef.current) return;
-    
-    const page = Math.max(1, Math.min(pageNumber, totalPages));
-    if (page !== currentPage) {
-      setCurrentPage(page);
+    if (apiRef.current) {
+      apiRef.current.gotoLocation(pageNumber);
+      setCurrentPage(pageNumber);
     }
-  }, [currentPage, totalPages]);
-
-  // Navigate to next page
-  const nextPage = useCallback(() => {
-    goToPage(currentPage + 1);
-  }, [currentPage, goToPage]);
-
-  // Navigate to previous page
-  const prevPage = useCallback(() => {
-    goToPage(currentPage - 1);
-  }, [currentPage, goToPage]);
-
-  // Zoom in/out
-  const zoom = useCallback((newScale) => {
-    const minScale = 0.5;
-    const maxScale = 3.0;
-    const scaleValue = Math.max(minScale, Math.min(maxScale, newScale));
-    setScale(scaleValue);
   }, []);
 
-  // Fit to width
+  const nextPage = useCallback(() => {
+    if (currentPage < totalPages) goToPage(currentPage + 1);
+  }, [currentPage, totalPages, goToPage]);
+
+  const prevPage = useCallback(() => {
+    if (currentPage > 1) goToPage(currentPage - 1);
+  }, [currentPage, goToPage]);
+
+  const zoom = useCallback((newScale) => {
+    if (apiRef.current) {
+      apiRef.current.setZoomLevel(newScale * 100); // Adobe API uses percentage
+      setScale(newScale);
+    }
+  }, []);
+
   const fitToWidth = useCallback(() => {
-    if (pdfContainerRef.current) {
-      const containerWidth = pdfContainerRef.current.offsetWidth;
-      const calculatedScale = containerWidth / 800; // Adjust denominator based on your PDF width
-      setScale(calculatedScale);
+    if (apiRef.current) {
+      apiRef.current.setZoomMode("FIT_WIDTH");
     }
   }, []);
 
   return {
-    // State
     currentPage,
     totalPages,
     scale,
     isLoading,
     error,
-    
-    // Refs
-    pdfContainerRef,
-    
-    // Methods
     initializePDF,
     goToPage,
     nextPage,
     prevPage,
     zoom,
     fitToWidth,
-    
-    // Convenience properties
     isFirstPage: currentPage === 1,
     isLastPage: currentPage === totalPages,
   };

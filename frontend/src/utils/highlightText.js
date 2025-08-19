@@ -172,3 +172,4 @@ export default {
   generatePreviewSnippet,
   normalizeText
 };
+

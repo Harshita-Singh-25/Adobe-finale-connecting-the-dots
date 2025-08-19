@@ -1,347 +1,162 @@
-import React, { useState, useEffect } from 'react';
-import { usePDFNavigation } from "../hooks/usePDFNavigation";
-import { usePDFSelection } from "../hooks/usePDFSelection";
-import { useSemanticSearch } from "../hooks/useSemanticSearch";
-import * as pdfjsLib from 'pdfjs-dist';
+// src/pages/Home.jsx
+import React, { useState, useRef } from 'react';
+import { usePDF } from '../context/PDFContext';
+import { useNavigate } from 'react-router-dom';
+import { Upload, FileText, ChevronRight, Search } from 'lucide-react';
+import { Button } from '../components/common/Button'; // CORRECTED IMPORT PATH
 
 const Home = () => {
-  // PDF Navigation
-  const {
-    currentPage,
-    totalPages,
-    scale,
-    isLoading: isPdfLoading,
-    error: pdfError,
-    pdfContainerRef,
-    initializePDF,
-    goToPage,
-    nextPage,
-    prevPage,
-    zoom,
-    fitToWidth,
-    isFirstPage,
-    isLastPage,
-  } = usePDFNavigation();
+  const { uploadPDFs, isLoading } = usePDF();
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef(null);
+  const navigate = useNavigate();
 
-  // PDF Selection
-  const {
-    selections,
-    currentSelection,
-    initializePDF: initSelection,
-    clearSelections,
-    removeSelection,
-    getSelectionRects,
-  } = usePDFSelection();
-
-  // Semantic Search
-  const {
-    query,
-    results,
-    isLoading: isSearchLoading,
-    error: searchError,
-    searchType,
-    threshold,
-    setQuery,
-    setSearchType,
-    setThreshold,
-    search,
-    clearResults,
-  } = useSemanticSearch();
-
-  // State for uploaded PDF
-  const [pdfFile, setPdfFile] = useState(null);
-  const [highlights, setHighlights] = useState([]);
-
-  // Initialize PDF when file is selected
-  useEffect(() => {
-    if (!pdfFile) return;
-
-    const loadPDF = async () => {
-      try {
-        const url = URL.createObjectURL(pdfFile);
-        const loadingTask = pdfjsLib.getDocument(url);
-        const pdfDocument = await loadingTask.promise;
-        
-        initializePDF(url);
-        initSelection(pdfDocument);
-      } catch (err) {
-        console.error('PDF loading error:', err);
+  const handleFileChange = async (event) => {
+    const files = Array.from(event.target.files);
+    if (files.length === 0) return;
+    
+    try {
+      const uploadedDocuments = await uploadPDFs(files);
+      if (uploadedDocuments.length > 0) {
+        navigate(`/reader/${uploadedDocuments[0].id}`);
       }
-    };
-
-    loadPDF();
-
-    return () => {
-      if (pdfFile) {
-        URL.revokeObjectURL(pdfFile);
-      }
-    };
-  }, [pdfFile, initializePDF, initSelection]);
-
-  // Update highlights when selections change
-  useEffect(() => {
-    setHighlights(getSelectionRects());
-  }, [selections, getSelectionRects]);
-
-  // Handle file upload
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file && file.type === 'application/pdf') {
-      setPdfFile(file);
-      clearSelections();
-      clearResults();
+    } catch (error) {
+      console.error('Error processing files:', error);
     }
   };
 
-  // Handle search from selection
-  const handleSearchFromSelection = () => {
-    if (currentSelection?.text) {
-      setQuery(currentSelection.text);
-      search(currentSelection.text);
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const files = Array.from(e.dataTransfer.files).filter(
+      file => file.type === 'application/pdf'
+    );
+    
+    if (files.length > 0) {
+      fileInputRef.current.files = e.dataTransfer.files;
+      handleFileChange({ target: { files: e.dataTransfer.files } });
     }
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-blue-800 text-white p-4 flex justify-between items-center">
-        <h1 className="text-xl font-bold">Document Intelligence Platform</h1>
-        <div className="flex items-center gap-2">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col items-center justify-center p-4">
+      <div className="w-full max-w-4xl bg-white rounded-xl shadow-2xl p-8">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-gray-800 mb-4">
+            Document Insight System
+          </h1>
+          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+            Upload PDFs to discover connections and insights across your documents using Adobe's powerful PDF technology
+          </p>
+        </div>
+        
+        <div 
+          className={`border-3 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all duration-300 ${
+            isDragging 
+              ? 'border-blue-500 bg-blue-50 scale-105' 
+              : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+          }`}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+        >
           <input
             type="file"
-            accept="application/pdf"
+            ref={fileInputRef}
             onChange={handleFileChange}
-            id="pdf-upload"
+            accept="application/pdf"
+            multiple
             className="hidden"
           />
-          <label 
-            htmlFor="pdf-upload" 
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded cursor-pointer transition-colors"
-          >
-            Upload PDF
-          </label>
-          {pdfFile && (
-            <span className="text-sm text-blue-100 truncate max-w-xs">
-              {pdfFile.name}
-            </span>
-          )}
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* PDF Viewer */}
-        <div className="flex-1 p-4 overflow-auto border-r border-gray-200">
-          {!pdfFile ? (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-gray-500">Upload a PDF document to begin</p>
-            </div>
-          ) : (
-            <>
-              {/* PDF Controls */}
-              <div className="flex items-center gap-2 mb-4 flex-wrap">
-                <button 
-                  onClick={prevPage} 
-                  disabled={isFirstPage || isPdfLoading}
-                  className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <span className="text-sm">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <button 
-                  onClick={nextPage} 
-                  disabled={isLastPage || isPdfLoading}
-                  className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
-                >
-                  Next
-                </button>
-                <button 
-                  onClick={() => zoom(scale + 0.1)} 
-                  className="px-3 py-1 bg-gray-200 rounded"
-                >
-                  Zoom In
-                </button>
-                <button 
-                  onClick={() => zoom(scale - 0.1)} 
-                  className="px-3 py-1 bg-gray-200 rounded"
-                >
-                  Zoom Out
-                </button>
-                <button 
-                  onClick={fitToWidth} 
-                  className="px-3 py-1 bg-gray-200 rounded"
-                >
-                  Fit Width
-                </button>
-                <input
-                  type="number"
-                  min="1"
-                  max={totalPages}
-                  value={currentPage}
-                  onChange={(e) => goToPage(parseInt(e.target.value))}
-                  disabled={isPdfLoading}
-                  className="w-16 px-2 py-1 border rounded"
-                />
-              </div>
-
-              {/* PDF Container */}
-              <div
-                ref={pdfContainerRef}
-                className="relative bg-white shadow-md overflow-hidden"
-                style={{ transform: `scale(${scale})`, transformOrigin: '0 0' }}
-              >
-                {/* PDF content would be rendered here */}
-                {isPdfLoading && (
-                  <div className="absolute inset-0 bg-black bg-opacity-20 flex items-center justify-center">
-                    <p className="text-white">Loading PDF...</p>
-                  </div>
-                )}
-                {pdfError && (
-                  <div className="p-2 bg-red-100 text-red-800">
-                    {pdfError}
-                  </div>
-                )}
-
-                {/* Highlights */}
-                {highlights.map((highlight) => (
-                  <div
-                    key={highlight.id}
-                    className="absolute pointer-events-none"
-                    style={{
-                      left: `${highlight.rects[0].left}px`,
-                      top: `${highlight.rects[0].top}px`,
-                      width: `${highlight.rects[0].width}px`,
-                      height: `${highlight.rects[0].height}px`,
-                      backgroundColor: highlight.color,
-                    }}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Search Panel */}
-        <div className="w-96 p-4 overflow-auto bg-gray-50">
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold mb-2">Semantic Search</h2>
-            
-            {/* Search Input */}
-            <div className="flex gap-2 mb-3">
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Enter search query..."
-                disabled={!pdfFile}
-                className="flex-1 px-3 py-2 border rounded disabled:opacity-50"
-              />
-              <button 
-                onClick={() => search(query)} 
-                disabled={!pdfFile || isSearchLoading}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {isSearchLoading ? 'Searching...' : 'Search'}
-              </button>
-            </div>
-
-            {currentSelection && (
-              <button 
-                onClick={handleSearchFromSelection}
-                className="w-full mb-3 px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
-              >
-                Search Selection
-              </button>
-            )}
-
-            {/* Search Options */}
-            <div className="space-y-3 mb-4">
-              <div className="flex items-center gap-2">
-                <label className="text-sm">Search Type:</label>
-                <select
-                  value={searchType}
-                  onChange={(e) => setSearchType(e.target.value)}
-                  className="flex-1 px-2 py-1 border rounded"
-                >
-                  <option value="semantic">Semantic</option>
-                  <option value="keyword">Keyword</option>
-                </select>
-              </div>
-
-              {searchType === 'semantic' && (
-                <div className="flex items-center gap-2">
-                  <label className="text-sm">Similarity Threshold:</label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={threshold}
-                    onChange={(e) => setThreshold(parseFloat(e.target.value))}
-                    className="flex-1"
-                  />
-                  <span className="text-sm w-10">{threshold.toFixed(2)}</span>
-                </div>
+          
+          <div className="flex flex-col items-center justify-center space-y-6">
+            <div className={`p-4 rounded-full ${
+              isDragging ? 'bg-blue-100' : 'bg-gray-100'
+            }`}>
+              {isLoading ? (
+                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Upload className={`w-12 h-12 ${
+                  isDragging ? 'text-blue-600' : 'text-gray-400'
+                }`} />
               )}
             </div>
+            
+            <div className="space-y-3">
+              <p className="text-2xl font-semibold text-gray-800">
+                {isLoading ? 'Processing your PDFs...' : 'Drag & drop PDFs here'}
+              </p>
+              <p className="text-gray-500 text-lg">
+                or click to browse your files
+              </p>
+            </div>
+
+            <Button
+              variant="primary"
+              size="lg"
+              disabled={isLoading}
+              className="pointer-events-none"
+            >
+              {isLoading ? 'Uploading...' : 'Choose PDF Files'}
+            </Button>
           </div>
-
-          {/* Search Results */}
-          <div>
-            {searchError && (
-              <div className="p-2 mb-3 bg-red-100 text-red-800 rounded">
-                {searchError}
+        </div>
+        
+        <div className="mt-8 text-center">
+          <p className="text-sm text-gray-500 mb-6">
+            Supported: PDF files • Max 100MB per file
+          </p>
+          
+          <div className="bg-gray-50 rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">
+              How it works:
+            </h3>
+            <div className="grid md:grid-cols-3 gap-6 text-left">
+              <div className="flex items-start space-x-3">
+                <div className="bg-blue-100 p-2 rounded-full">
+                  <span className="text-blue-600 font-bold">1</span>
+                </div>
+                <div>
+                  <h4 className="font-medium text-gray-800">Upload PDFs</h4>
+                  <p className="text-sm text-gray-600">Add multiple PDF documents to your library</p>
+                </div>
               </div>
-            )}
-
-            {results.length > 0 ? (
-              <ul className="space-y-3">
-                {results.map((result, index) => (
-                  <li key={index} className="p-3 bg-white rounded shadow">
-                    <h3 className="font-medium">
-                      {result.title || `Result ${index + 1}`}
-                    </h3>
-                    {result.similarity && (
-                      <div className="text-sm text-blue-600 mb-1">
-                        Similarity: {(result.similarity * 100).toFixed(1)}%
-                      </div>
-                    )}
-                    <p className="text-sm text-gray-700 mb-2">{result.content}</p>
-                    {result.page && (
-                      <button 
-                        onClick={() => goToPage(result.page)}
-                        className="text-xs px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
-                      >
-                        Go to Page {result.page}
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <div className="text-center text-gray-500 p-4">
-                {query ? 'No results found' : 'Enter a search query'}
+              
+              <div className="flex items-start space-x-3">
+                <div className="bg-blue-100 p-2 rounded-full">
+                  <span className="text-blue-600 font-bold">2</span>
+                </div>
+                <div>
+                  <h4 className="font-medium text-gray-800">Select Text</h4>
+                  <p className="text-sm text-gray-600">Highlight text in any document</p>
+                </div>
               </div>
-            )}
+              
+              <div className="flex items-start space-x-3">
+                <div className="bg-blue-100 p-2 rounded-full">
+                  <span className="text-blue-600 font-bold">3</span>
+                </div>
+                <div>
+                  <h4 className="font-medium text-gray-800">Discover Insights</h4>
+                  <p className="text-sm text-gray-600">Find related content across all your documents</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-
-      {/* Selection Info Panel */}
-      {currentSelection && (
-        <div className="p-3 bg-white border-t border-gray-200">
-          <h3 className="font-medium mb-1">Current Selection</h3>
-          <p className="text-sm mb-2">{currentSelection.text}</p>
-          <button 
-            onClick={() => removeSelection(currentSelection.id)}
-            className="px-3 py-1 bg-red-100 text-red-800 rounded hover:bg-red-200 text-sm"
-          >
-            Remove Selection
-          </button>
-        </div>
-      )}
     </div>
   );
 };
