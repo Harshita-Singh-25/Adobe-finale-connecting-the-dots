@@ -28,12 +28,12 @@ class SemanticSearchEngine:
         self.device = 'cuda' if torch.cuda.is_available() and settings.USE_GPU else 'cpu'
         self.initialized = False
         
-        print(f"SemanticSearchEngine initializing with device: {self.device}")
+        logger.info(f"SemanticSearchEngine initializing with device: {self.device}")
     
     async def initialize(self):
         """Initialize the search engine and load model"""
         try:
-            print("Loading sentence transformer model...")
+            logger.info("Loading sentence transformer model...")
             self.model = SentenceTransformer(settings.EMBEDDING_MODEL)
             self.model.to(self.device)
             
@@ -44,7 +44,7 @@ class SemanticSearchEngine:
             await self._load_existing_index()
             
             self.initialized = True
-            print(f"SemanticSearchEngine initialized successfully with {len(self.section_metadata)} sections")
+            logger.info(f"SemanticSearchEngine initialized successfully with {len(self.section_metadata)} sections")
             
         except Exception as e:
             logger.error(f"Failed to initialize SemanticSearchEngine: {e}")
@@ -56,7 +56,7 @@ class SemanticSearchEngine:
         """Initialize new FAISS index"""
         # Use IndexFlatIP for inner product (normalized vectors = cosine similarity)
         self.index = faiss.IndexFlatIP(settings.EMBEDDING_DIM)
-        print(f"Initialized FAISS index with dimension {settings.EMBEDDING_DIM}")
+        logger.info(f"Initialized FAISS index with dimension {settings.EMBEDDING_DIM}")
     
     async def _load_existing_index(self):
         """Load existing index if available"""
@@ -70,26 +70,16 @@ class SemanticSearchEngine:
                     data = pickle.load(f)
                     self.doc_metadata = data['docs']
                     self.section_metadata = data['sections']
-                print(f"Loaded existing index with {len(self.section_metadata)} sections")
+                logger.info(f"Loaded existing index with {len(self.section_metadata)} sections")
             except Exception as e:
-                print(f"Failed to load existing index: {e}")
+                logger.warning(f"Failed to load existing index: {e}")
                 self._initialize_index()
     
     def add_document(self, doc_structure: Dict[str, Any]):
         """Add document sections to search index"""
         if not self.initialized:
-            print("Warning: SemanticSearchEngine not initialized, initializing now...")
-            # Force synchronous initialization
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # If we're in an async context, we can't call async methods directly
-                    self._sync_initialize()
-                else:
-                    asyncio.run(self.initialize())
-            except:
-                self._sync_initialize()
+            logger.warning("SemanticSearchEngine not initialized, initializing now...")
+            self._sync_initialize()
         
         doc_id = doc_structure['doc_id']
         self.doc_metadata[doc_id] = {
@@ -128,7 +118,7 @@ class SemanticSearchEngine:
                     new_sections.append(section_meta)
                     
             except Exception as e:
-                print(f"Error processing section {section.get('heading', 'Unknown')}: {e}")
+                logger.error(f"Error processing section {section.get('heading', 'Unknown')}: {e}")
                 continue
         
         # Add to FAISS index
@@ -136,7 +126,7 @@ class SemanticSearchEngine:
             embeddings_array = np.array(embeddings, dtype=np.float32)
             self.index.add(embeddings_array)
             self.section_metadata.extend(new_sections)
-            print(f"Added {len(embeddings)} sections to search index")
+            logger.info(f"Added {len(embeddings)} sections to search index")
         
         # Save index
         self._save_index()
@@ -144,15 +134,14 @@ class SemanticSearchEngine:
     def _sync_initialize(self):
         """Synchronous fallback initialization"""
         try:
-            print("Performing sync initialization...")
-            from sentence_transformers import SentenceTransformer
+            logger.info("Performing sync initialization...")
             self.model = SentenceTransformer(settings.EMBEDDING_MODEL)
             self.model.to(self.device)
             self._initialize_index()
             self.initialized = True
-            print("Sync initialization completed")
+            logger.info("Sync initialization completed")
         except Exception as e:
-            print(f"Sync initialization failed: {e}")
+            logger.error(f"Sync initialization failed: {e}")
             self.initialized = False
     
     def search_related_sections(self, selected_text: str, 
@@ -160,20 +149,20 @@ class SemanticSearchEngine:
                               top_k: int = 5) -> List[Dict[str, Any]]:
         """Find related sections across all documents"""
         if not self.initialized:
-            print("Search engine not initialized!")
+            logger.error("Search engine not initialized!")
             return []
             
         if self.index is None or self.index.ntotal == 0:
-            print("No documents in search index!")
+            logger.warning("No documents in search index!")
             return []
         
-        print(f"Searching for: '{selected_text[:50]}...' across {self.index.ntotal} sections")
+        logger.info(f"Searching for: '{selected_text[:50]}...' across {self.index.ntotal} sections")
         
         try:
             # Generate query embedding
             query_embedding = self._generate_embedding(selected_text)
             if query_embedding is None:
-                print("Failed to generate query embedding")
+                logger.error("Failed to generate query embedding")
                 return []
                 
             query_embedding = query_embedding / np.linalg.norm(query_embedding)
@@ -183,7 +172,7 @@ class SemanticSearchEngine:
             k = min(top_k * 3, self.index.ntotal)  # Search more to filter later
             distances, indices = self.index.search(query_embedding, k)
             
-            print(f"FAISS search returned {len(indices[0])} results")
+            logger.info(f"FAISS search returned {len(indices[0])} results")
             
             # Process results
             results = []
@@ -196,7 +185,7 @@ class SemanticSearchEngine:
                 section = self.section_metadata[idx]
                 doc_id = section['doc_id']
                 
-                # Skip if from same section or same document if specified
+                # Skip if from same section
                 section_key = f"{doc_id}_{section['section_id']}"
                 if section_key in seen_sections:
                     continue
@@ -210,7 +199,7 @@ class SemanticSearchEngine:
                 # Calculate similarity score (cosine similarity from inner product)
                 similarity = float(distance)
                 
-                print(f"Section: {section['heading'][:50]} - Score: {similarity:.3f}")
+                logger.debug(f"Section: {section['heading'][:50]} - Score: {similarity:.3f}")
                 
                 # Skip if below threshold
                 if similarity < settings.MIN_SIMILARITY_SCORE:
@@ -249,99 +238,20 @@ class SemanticSearchEngine:
             # Sort by relevance
             results.sort(key=lambda x: x['similarity_score'], reverse=True)
             
-            print(f"Returning {len(results)} relevant sections")
+            logger.info(f"Returning {len(results)} relevant sections")
             return results[:top_k]
             
         except Exception as e:
-            print(f"Search error: {e}")
+            logger.error(f"Search error: {e}")
             return []
     
     def _generate_embedding(self, text: str) -> Optional[np.ndarray]:
         """Generate embedding for text"""
         if not self.model:
-            print("Model not loaded!")
+            logger.error("Model not loaded!")
             return None
             
         try:
             # Truncate to max length
             if len(text) > settings.MAX_SEQUENCE_LENGTH * 4:
-                text = text[:settings.MAX_SEQUENCE_LENGTH * 4]
-            
-            # Generate embedding
-            with torch.no_grad():
-                embedding = self.model.encode(
-                    text,
-                    convert_to_numpy=True,
-                    normalize_embeddings=False,
-                    show_progress_bar=False,
-                    device=self.device
-                )
-            
-            return embedding
-            
-        except Exception as e:
-            print(f"Embedding generation error: {e}")
-            return None
-    
-    def _determine_relevance_type(self, query: str, content: str) -> str:
-        """Determine type of relevance between texts"""
-        query_lower = query.lower()
-        content_lower = content.lower()
-        
-        # Check for contradictions
-        contradiction_indicators = ['however', 'but', 'contrary', 'opposite', 
-                                   'disagree', 'conflict', 'whereas', 'although']
-        for indicator in contradiction_indicators:
-            if indicator in content_lower:
-                return "contradiction"
-        
-        # Check for examples
-        example_indicators = ['for example', 'for instance', 'such as', 
-                             'e.g.', 'i.e.', 'specifically', 'namely']
-        for indicator in example_indicators:
-            if indicator in content_lower:
-                return "example"
-        
-        # Check for extensions
-        extension_indicators = ['furthermore', 'moreover', 'additionally', 
-                               'extends', 'builds upon', 'also', 'similarly']
-        for indicator in extension_indicators:
-            if indicator in content_lower:
-                return "extension"
-        
-        return "related"
-    
-    def _save_index(self):
-        """Save FAISS index and metadata"""
-        try:
-            index_path = settings.EMBEDDINGS_DIR / "faiss.index"
-            metadata_path = settings.EMBEDDINGS_DIR / "metadata.pkl"
-            
-            # Save FAISS index
-            faiss.write_index(self.index, str(index_path))
-            
-            # Save metadata
-            with open(metadata_path, 'wb') as f:
-                pickle.dump({
-                    'docs': self.doc_metadata,
-                    'sections': self.section_metadata
-                }, f)
-                
-            print(f"Saved index with {len(self.section_metadata)} sections")
-        except Exception as e:
-            print(f"Failed to save index: {e}")
-    
-    async def cleanup(self):
-        """Cleanup resources"""
-        self._save_index()
-        
-    def get_statistics(self) -> Dict[str, Any]:
-        """Get search engine statistics"""
-        return {
-            'total_documents': len(self.doc_metadata),
-            'total_sections': len(self.section_metadata),
-            'index_size': self.index.ntotal if self.index else 0,
-            'embedding_dim': settings.EMBEDDING_DIM,
-            'model': settings.EMBEDDING_MODEL,
-            'initialized': self.initialized
-        }
+                text = text[:settings.MAX_

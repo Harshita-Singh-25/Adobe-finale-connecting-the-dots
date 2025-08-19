@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import uvicorn
 import asyncio
+import logging
 
 # Add backend to path
 sys.path.append(str(Path(__file__).parent.parent))
@@ -16,6 +17,10 @@ from backend.api.routes import documents, selection, health
 from backend.core.config import settings
 from backend.services.document_indexer import DocumentIndexer
 from backend.services.semantic_search import SemanticSearchEngine
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Global service instances
 document_indexer = None
@@ -27,7 +32,7 @@ async def lifespan(app: FastAPI):
     global document_indexer, search_engine
     
     # Startup
-    print("Initializing Document Processing System...")
+    logger.info("Initializing Document Processing System...")
     
     # Create necessary directories
     for dir_path in [settings.UPLOAD_DIR, settings.PROCESSED_DIR, 
@@ -35,7 +40,7 @@ async def lifespan(app: FastAPI):
         Path(dir_path).mkdir(parents=True, exist_ok=True)
     
     # Initialize services
-    print("Creating service instances...")
+    logger.info("Creating service instances...")
     document_indexer = DocumentIndexer()
     search_engine = SemanticSearchEngine()
     
@@ -44,20 +49,20 @@ async def lifespan(app: FastAPI):
     await search_engine.initialize()
     
     # Load existing documents into search engine
-    print("Loading existing documents into search engine...")
+    logger.info("Loading existing documents into search engine...")
     for doc in document_indexer.get_all_documents():
         try:
             search_engine.add_document(doc)
-            print(f"Added document to search: {doc['title']}")
+            logger.info(f"Added document to search: {doc['title']}")
         except Exception as e:
-            print(f"Failed to add document {doc['title']} to search: {e}")
+            logger.error(f"Failed to add document {doc['title']} to search: {e}")
     
-    print("System initialized successfully!")
+    logger.info("System initialized successfully!")
     
     yield
     
     # Shutdown
-    print("Shutting down services...")
+    logger.info("Shutting down services...")
     if document_indexer:
         await document_indexer.cleanup()
     if search_engine:
@@ -82,20 +87,17 @@ app.add_middleware(
 
 # Mount static files for uploaded documents
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
-app.mount("/processed", StaticFiles(directory=settings.PROCESSED_DIR), name="processed")
+app.mount("/static", StaticFiles(directory="frontend/dist"), name="static")
 
 # Include routers
 app.include_router(health.router, prefix="/api/health", tags=["health"])
 app.include_router(documents.router, prefix="/api/documents", tags=["documents"])
 app.include_router(selection.router, prefix="/api/selection", tags=["selection"])
 
-# Make services available to routes
-app.state.document_indexer = lambda: document_indexer
-app.state.search_engine = lambda: search_engine
-
-# Root endpoint
+# Serve frontend at root
 @app.get("/")
-async def root():
+async def serve_frontend():
+    """Serve the frontend application"""
     return {"message": "Adobe Hackathon Document Intelligence System", "status": "running"}
 
 # Export for Docker
@@ -104,7 +106,7 @@ def get_app():
 
 if __name__ == "__main__":
     uvicorn.run(
-        "main:app",
+        "backend.main:app",
         host="0.0.0.0",
         port=8080,
         reload=settings.DEBUG,

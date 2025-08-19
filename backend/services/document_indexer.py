@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Any
 import time
 import logging
 from datetime import datetime
+import hashlib
 
 from backend.core.config import settings
 from backend.services.pdf_processor import PDFProcessor
@@ -20,13 +21,12 @@ class DocumentIndexer:
         self.pdf_processor = PDFProcessor()
         self.text_processor = TextProcessor()
         self.index_file = settings.PROCESSED_DIR / "document_index.json"
-        self.load_index()
     
     async def initialize(self):
         """Initialize the document indexer"""
         # Load any existing processed documents
         self.load_index()
-        print(f"DocumentIndexer initialized with {len(self.indexed_docs)} documents")
+        logger.info(f"DocumentIndexer initialized with {len(self.indexed_docs)} documents")
     
     async def cleanup(self):
         """Cleanup and save index"""
@@ -91,75 +91,81 @@ class DocumentIndexer:
             'total_time': total_time
         }
     
-    async def process_fresh_document(self, file_path: Path) -> Dict[str, Any]:
+    async def process_fresh_document(self, file_path: Path, original_filename: str = None) -> Dict[str, Any]:
         """Process a single fresh document"""
-        result = await self._process_single_document(file_path, is_fresh=True)
+        result = await self._process_single_document(file_path, is_fresh=True, original_filename=original_filename)
         self.save_index()
         return result
     
-    async def _process_single_document(self, file_path: Path, is_fresh: bool = False) -> Dict[str, Any]:
+    async def _process_single_document(self, file_path: Path, is_fresh: bool = False, original_filename: str = None) -> Dict[str, Any]:
         """Process a single PDF document"""
         doc_id = str(uuid.uuid4())
         
-        # Extract PDF content
-        pdf_data = await self.pdf_processor.extract_pdf_content(file_path)
-        
-        # Process sections and add snippets
-        sections = []
-        for section_data in pdf_data['sections']:
-            section_id = str(uuid.uuid4())
+        try:
+            # Extract PDF content
+            pdf_data = await self.pdf_processor.extract_pdf_content(file_path)
             
-            # Clean content
-            content = self.text_processor.clean_text(section_data['content'])
+            # Process sections and add snippets
+            sections = []
+            for section_data in pdf_data['sections']:
+                section_id = str(uuid.uuid4())
+                
+                # Clean content
+                content = self.text_processor.clean_text(section_data['content'])
+                
+                # Extract snippets from content
+                snippets = self.text_processor.extract_snippets(
+                    content,
+                    max_sentences=settings.SNIPPET_LENGTH
+                )
+                
+                section = {
+                    'section_id': section_id,
+                    'doc_id': doc_id,
+                    'heading': section_data['heading'],
+                    'level': section_data['level'],
+                    'content': content,
+                    'page_num': section_data['page_num'],
+                    'start_page': section_data.get('start_page', section_data['page_num']),
+                    'end_page': section_data.get('end_page', section_data['page_num']),
+                    'snippets': snippets,
+                    'word_count': len(content.split())
+                }
+                sections.append(section)
             
-            # Extract snippets from content
-            snippets = self.text_processor.extract_snippets(
-                content,
-                max_sentences=settings.SNIPPET_LENGTH
-            )
+            # Copy file to uploads directory
+            filename = original_filename or file_path.name
+            final_path = settings.UPLOAD_DIR / f"{doc_id}_{filename}"
+            import shutil
+            shutil.copy2(file_path, final_path)
             
-            section = {
-                'section_id': section_id,
+            # Store document
+            document = {
                 'doc_id': doc_id,
-                'heading': section_data['heading'],
-                'level': section_data['level'],
-                'content': content,
-                'page_num': section_data['page_num'],
-                'start_page': section_data.get('start_page', section_data['page_num']),
-                'end_page': section_data.get('end_page', section_data['page_num']),
-                'snippets': snippets,
-                'word_count': len(content.split())
+                'title': pdf_data['title'],
+                'pages': pdf_data['pages'],
+                'sections': sections,
+                'path': str(final_path),
+                'is_fresh': is_fresh,
+                'metadata': pdf_data.get('metadata', {}),
+                'created_at': datetime.now().isoformat(),
+                'processed_at': datetime.now().isoformat()
             }
-            sections.append(section)
-        
-        # Copy file to uploads directory
-        final_path = settings.UPLOAD_DIR / f"{doc_id}_{file_path.name}"
-        import shutil
-        shutil.copy2(file_path, final_path)
-        
-        # Store document
-        document = {
-            'doc_id': doc_id,
-            'title': pdf_data['title'],
-            'pages': pdf_data['pages'],
-            'sections': sections,
-            'path': str(final_path),
-            'is_fresh': is_fresh,
-            'metadata': pdf_data.get('metadata', {}),
-            'created_at': datetime.now().isoformat(),
-            'processed_at': datetime.now().isoformat()
-        }
-        
-        self.indexed_docs[doc_id] = document
-        
-        # Save individual document file
-        doc_file = settings.PROCESSED_DIR / f"{doc_id}.json"
-        with open(doc_file, 'w', encoding='utf-8') as f:
-            json.dump(document, f, indent=2, ensure_ascii=False)
-        
-        logger.info(f"Processed document: {document['title']} with {len(sections)} sections")
-        
-        return document
+            
+            self.indexed_docs[doc_id] = document
+            
+            # Save individual document file
+            doc_file = settings.PROCESSED_DIR / f"{doc_id}.json"
+            with open(doc_file, 'w', encoding='utf-8') as f:
+                json.dump(document, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"Processed document: {document['title']} with {len(sections)} sections")
+            
+            return document
+            
+        except Exception as e:
+            logger.error(f"Error processing document {file_path}: {e}")
+            raise
     
     def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """Get document by ID"""
