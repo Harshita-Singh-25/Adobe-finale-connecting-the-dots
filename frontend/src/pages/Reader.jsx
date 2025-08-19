@@ -1,17 +1,32 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { usePDF } from '../context/PDFContext';
 import { useSelection } from '../context/SelectionContext';
 import InsightBulb from "../components/insights/InsightBulb";
 import { RelatedSnippetsList as SnippetPanel } from "../components/insights/RelatedSnippetsList";
-import AdobePDFViewer from '../components/pdf/AdobePDFViewer';
 
 const Reader = () => {
   const { documentId } = useParams();
-  const { currentPDF, getRelevantSections } = usePDF();
+  const { currentDocument, getRelevantSections, pdfDocuments, setAsCurrentDocument } = usePDF();
   const { selectedText } = useSelection();
   const [snippets, setSnippets] = useState([]);
   const [isLoadingSnippets, setIsLoadingSnippets] = useState(false);
+
+  // Load the document when documentId changes
+  useEffect(() => {
+    if (documentId && pdfDocuments.length > 0) {
+      // Find the document in your uploaded documents
+      const document = pdfDocuments.find(doc => 
+        doc.id === documentId || doc.id.toString() === documentId
+      );
+      
+      if (document) {
+        setAsCurrentDocument(document);
+      } else {
+        console.warn('Document not found in uploaded documents:', documentId);
+      }
+    }
+  }, [documentId, pdfDocuments, setAsCurrentDocument]);
 
   const fetchRelevantSections = useCallback(async (text) => {
     if (!text || text.trim().length < 3) {
@@ -31,11 +46,11 @@ const Reader = () => {
     }
   }, [documentId, getRelevantSections]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (selectedText) {
       const timer = setTimeout(() => {
         fetchRelevantSections(selectedText);
-      }, 500); // Debounce search
+      }, 500);
 
       return () => clearTimeout(timer);
     } else {
@@ -43,7 +58,7 @@ const Reader = () => {
     }
   }, [selectedText, fetchRelevantSections]);
 
-  if (!currentPDF) {
+  if (!currentDocument) {
     return (
       <div className="flex items-center justify-center h-full bg-gray-100">
         <div className="text-center p-8">
@@ -52,6 +67,9 @@ const Reader = () => {
           </div>
           <h3 className="text-lg font-medium text-gray-700 mb-2">No Document Selected</h3>
           <p className="text-gray-500">Please select a PDF document to view</p>
+          {pdfDocuments.length === 0 && (
+            <p className="text-sm text-gray-400 mt-2">No documents uploaded yet</p>
+          )}
         </div>
       </div>
     );
@@ -59,9 +77,35 @@ const Reader = () => {
 
   return (
     <div className="flex h-screen bg-gray-100">
-      {/* Main PDF Viewer */}
+      {/* Main PDF Viewer Area */}
       <div className="flex-1 p-4">
-        <AdobePDFViewer documentId={documentId} />
+        <div className="bg-white rounded-lg shadow-md h-full flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-3xl">📄</span>
+            </div>
+            <h3 className="text-xl font-semibold text-gray-800 mb-2">
+              {currentDocument.name}
+            </h3>
+            <p className="text-gray-600 mb-4">
+              PDF document ready for analysis
+            </p>
+            <div className="text-sm text-gray-500">
+              <p>Size: {(currentDocument.size / 1024 / 1024).toFixed(2)} MB</p>
+              <p>Uploaded: {new Date(currentDocument.uploadDate).toLocaleDateString()}</p>
+            </div>
+            
+            {/* Add your actual PDF viewer component here */}
+            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+              <p className="text-sm text-gray-500">
+                PDF viewer component will be integrated here
+              </p>
+              <p className="text-xs text-gray-400 mt-2">
+                Document ID: {currentDocument.id}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
       
       {/* Snippets Sidebar */}
@@ -91,7 +135,6 @@ const Reader = () => {
             isLoading={isLoadingSnippets}
             onSnippetClick={(snippet) => {
               console.log('Navigate to snippet:', snippet);
-              // Implement navigation logic here
             }}
           />
         </div>
