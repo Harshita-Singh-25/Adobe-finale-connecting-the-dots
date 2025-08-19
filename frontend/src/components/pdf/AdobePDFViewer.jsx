@@ -56,7 +56,7 @@ const AdobePDFViewer = ({ documentId }) => {
   const [totalPages, setTotalPages] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const { currentPDF } = usePDF();
+  const { currentDocument: currentPDF } = usePDF();
   const { handleTextSelection } = useSelection();
 
   // Initialize Adobe Viewer
@@ -72,8 +72,8 @@ const AdobePDFViewer = ({ documentId }) => {
     try {
       // Wait for Adobe API to be ready
       await waitForAdobeAPI();
-
-      const clientId = import.meta.env.VITE_ADOBE_API_KEY || process.env.REACT_APP_ADOBE_API_KEY;
+      
+      const clientId = import.meta.env.VITE_ADOBE_API_KEY || import.meta.env.REACT_APP_ADOBE_API_KEY;
       
       if (!clientId) {
         throw new Error('Adobe API key not found. Please set VITE_ADOBE_API_KEY environment variable.');
@@ -240,7 +240,7 @@ const AdobePDFViewer = ({ documentId }) => {
         // Adobe viewer handles its own cleanup
       }
     };
-  }, [initializeAdobeViewer]);
+  }, [initializeAdobeViewer, adobeViewer]);
 
   if (!currentPDF) {
     return (

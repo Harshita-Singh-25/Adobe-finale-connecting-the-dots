@@ -60,6 +60,7 @@ export const PDFProvider = ({ children }) => {
   const value = {
     pdfDocuments,
     currentDocument,
+    currentPDF: currentDocument, // Add this alias
     isLoading,
     uploadPDFs,
     setAsCurrentDocument,
