@@ -4,6 +4,7 @@ import { usePDF } from '../context/PDFContext';
 import { useSelection } from '../context/SelectionContext';
 import InsightBulb from "../components/insights/InsightBulb";
 import { RelatedSnippetsList as SnippetPanel } from "../components/insights/RelatedSnippetsList";
+import AdobePDFViewer from "../components/pdf/AdobePDFViewer";
 
 const Reader = () => {
   const { documentId } = useParams();
@@ -79,32 +80,8 @@ const Reader = () => {
     <div className="flex h-screen bg-gray-100">
       {/* Main PDF Viewer Area */}
       <div className="flex-1 p-4">
-        <div className="bg-white rounded-lg shadow-md h-full flex items-center justify-center">
-          <div className="text-center">
-            <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-3xl">📄</span>
-            </div>
-            <h3 className="text-xl font-semibold text-gray-800 mb-2">
-              {currentDocument.name}
-            </h3>
-            <p className="text-gray-600 mb-4">
-              PDF document ready for analysis
-            </p>
-            <div className="text-sm text-gray-500">
-              <p>Size: {(currentDocument.size / 1024 / 1024).toFixed(2)} MB</p>
-              <p>Uploaded: {new Date(currentDocument.uploadDate).toLocaleDateString()}</p>
-            </div>
-            
-            {/* Add your actual PDF viewer component here */}
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-              <p className="text-sm text-gray-500">
-                PDF viewer component will be integrated here
-              </p>
-              <p className="text-xs text-gray-400 mt-2">
-                Document ID: {currentDocument.id}
-              </p>
-            </div>
-          </div>
+        <div className="bg-white rounded-lg shadow-md h-full flex flex-col">
+          <AdobePDFViewer documentId={documentId} />
         </div>
       </div>
       

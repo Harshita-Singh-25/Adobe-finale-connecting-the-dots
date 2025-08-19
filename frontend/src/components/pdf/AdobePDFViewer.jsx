@@ -4,21 +4,13 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { usePDF } from '../../context/PDFContext';
 import { useSelection } from '../../context/SelectionContext';
 import Loader from '../common/Loader';
-//import { Button } from './common/Button';
 import { Button } from '../common/Button';
 import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Maximize, Minus, Search } from 'lucide-react';
 
 // Helper function to wait for Adobe API
 const waitForAdobeAPI = () => {
   return new Promise((resolve, reject) => {
-    if (window.adobeDCView && window.adobeDCView.ready) {
-      resolve();
-      return;
-    }
-
-    // Check if AdobeDC is already available
-    if (typeof window.AdobeDC !== 'undefined') {
-      window.adobeDCView = window.adobeDCView || { ready: true };
+    if (window.AdobeDC && window.AdobeDC.View) {
       resolve();
       return;
     }
@@ -34,16 +26,6 @@ const waitForAdobeAPI = () => {
     };
 
     window.addEventListener('adobe_dc_view_sdk.ready', readyHandler);
-
-    // Also check periodically
-    const interval = setInterval(() => {
-      if (typeof window.AdobeDC !== 'undefined') {
-        clearTimeout(timeout);
-        clearInterval(interval);
-        window.removeEventListener('adobe_dc_view_sdk.ready', readyHandler);
-        resolve();
-      }
-    }, 100);
   });
 };
 
@@ -73,7 +55,10 @@ const AdobePDFViewer = ({ documentId }) => {
       // Wait for Adobe API to be ready
       await waitForAdobeAPI();
       
-      const clientId = import.meta.env.VITE_ADOBE_API_KEY || import.meta.env.REACT_APP_ADOBE_API_KEY;
+      const clientId =
+        import.meta.env.VITE_ADOBE_EMBED_API_KEY ||
+        import.meta.env.VITE_ADOBE_API_KEY ||
+        import.meta.env.REACT_APP_ADOBE_API_KEY;
       
       if (!clientId) {
         throw new Error('Adobe API key not found. Please set VITE_ADOBE_API_KEY environment variable.');
@@ -90,72 +75,156 @@ const AdobePDFViewer = ({ documentId }) => {
         divId: 'adobe-dc-view',
       });
 
-      // Create URL for the PDF file
-      const pdfUrl = URL.createObjectURL(currentPDF.file);
+      // Prepare file as an ArrayBuffer promise for local file usage
+      const filePromise = currentPDF.file?.arrayBuffer
+        ? currentPDF.file.arrayBuffer()
+        : new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(currentPDF.file);
+          });
 
       const previewConfig = {
         embedMode: 'SIZED_CONTAINER',
         defaultViewMode: 'FIT_WIDTH',
-        showDownloadPDF: true,
-        showPrintPDF: true,
+        showDownloadPDF: false,
+        showPrintPDF: false,
         showLeftHandPanel: false,
         showAnnotationTools: false,
         enableFormFilling: false,
         showBookmarks: false,
         showThumbnails: false,
+        enableAnnotationAPIs: false,
+        enableFormFillingAPIs: false,
+        enableDigitalSignatures: false,
+        enableEditingAPIs: false,
+        enableAccessibility: false
       };
 
-      // Preview the file
+      // Register feature flag callbacks to prevent errors
+      const registerFeatureFlagCallbacks = () => {
+        const featureFlags = [
+          'enable-tools-multidoc',
+          'edit-config',
+          'enable-accessibility',
+          'preview-config',
+          'enable-inline-organize',
+          'enable-pdf-request-signatures',
+          'DCWeb_edit_image_experiment'
+        ];
+
+        featureFlags.forEach(flag => {
+          try {
+            adobeDCView.registerCallback(
+              `GET_FEATURE_FLAG:${flag}`,
+              () => false,
+              false
+            );
+          } catch (error) {
+            console.warn(`Could not register callback for feature flag: ${flag}`);
+          }
+        });
+      };
+
+      registerFeatureFlagCallbacks();
+
+      // Preview the file using a promise for local files
       const previewPromise = adobeDCView.previewFile(
         {
-          content: { 
-            location: { 
-              url: pdfUrl 
-            } 
+          content: {
+            promise: filePromise,
+            mimeType: 'application/pdf'
           },
-          metaData: { 
-            fileName: currentPDF.name,
-            id: currentPDF.id 
+          metaData: {
+            fileName: currentPDF.name
           }
         },
         previewConfig
       );
 
-      // Set up event listeners
-      adobeDCView.registerCallback(
-        window.AdobeDC.View.Enum.CallbackType.GET_PAGE_INFO,
-        (data) => {
-          setCurrentPage(data.pageNumber);
-          setTotalPages(data.totalPages);
-        },
-        false
-      );
+      // Set up event listeners only if supported by this SDK build
+      const CallbackType =
+        (window.AdobeDC && window.AdobeDC.View && window.AdobeDC.View.Enum && window.AdobeDC.View.Enum.CallbackType) || {};
 
-      // Handle text selection
-      adobeDCView.registerCallback(
-        window.AdobeDC.View.Enum.CallbackType.TEXT_SELECTION_END,
-        (event) => {
-          if (event && event.data && event.data.text) {
-            handleTextSelection(event.data.text, {
-              x: event.clientX,
-              y: event.clientY
-            }, {
-              pageNumber: currentPage,
-              documentId: documentId
-            });
-          }
-        },
-        false
-      );
+      // Page info callback with error handling
+      try {
+        if (CallbackType.GET_PAGE_INFO) {
+          adobeDCView.registerCallback(
+            CallbackType.GET_PAGE_INFO,
+            (data) => {
+              if (data && typeof data.pageNumber === 'number') {
+                setCurrentPage(data.pageNumber);
+              }
+              if (data && typeof data.totalPages === 'number') {
+                setTotalPages(data.totalPages);
+              }
+            },
+            false
+          );
+        } else if (CallbackType.PAGE_VIEW_CHANGE) {
+          adobeDCView.registerCallback(
+            CallbackType.PAGE_VIEW_CHANGE,
+            (data) => {
+              if (data && typeof data.pageNumber === 'number') {
+                setCurrentPage(data.pageNumber);
+              }
+              if (data && typeof data.totalPages === 'number') {
+                setTotalPages(data.totalPages);
+              }
+            },
+            false
+          );
+        }
+      } catch (error) {
+        console.warn('Could not register page info callback:', error);
+      }
 
-      // Get initial zoom level
-      previewPromise.then(apis => {
-        apis.getAPIs().getZoomLevel().then(zoom => {
-          setZoomLevel(Math.round(zoom * 100));
-        });
-      });
+      // Text selection callback with error handling
+      try {
+        if (CallbackType.TEXT_SELECTION_END) {
+          adobeDCView.registerCallback(
+            CallbackType.TEXT_SELECTION_END,
+            (event) => {
+              if (event && event.data && event.data.text) {
+                handleTextSelection(
+                  event.data.text,
+                  { x: event.clientX, y: event.clientY },
+                  { pageNumber: currentPage, documentId: documentId }
+                );
+              }
+            },
+            false
+          );
+        } else if (CallbackType.TEXT_SELECTED) {
+          adobeDCView.registerCallback(
+            CallbackType.TEXT_SELECTED,
+            (event) => {
+              if (event && event.data && event.data.text) {
+                handleTextSelection(
+                  event.data.text,
+                  { x: event.clientX, y: event.clientY },
+                  { pageNumber: currentPage, documentId: documentId }
+                );
+              }
+            },
+            false
+          );
+        }
+      } catch (error) {
+        console.warn('Could not register text selection callback:', error);
+      }
 
+      // Store the viewer instance and set initial zoom level
+      await previewPromise;
       setAdobeViewer(adobeDCView);
+      try {
+        const apis = await adobeDCView.getAPIs();
+        const zoom = await apis.getZoomLevel();
+        setZoomLevel(Math.round(zoom * 100));
+      } catch (_) {
+        // ignore initial zoom fetch failures
+      }
       setError(null);
 
     } catch (error) {
@@ -234,13 +303,8 @@ const AdobePDFViewer = ({ documentId }) => {
   useEffect(() => {
     initializeAdobeViewer();
 
-    return () => {
-      // Cleanup
-      if (adobeViewer) {
-        // Adobe viewer handles its own cleanup
-      }
-    };
-  }, [initializeAdobeViewer, adobeViewer]);
+    return () => {};
+  }, [initializeAdobeViewer, currentPDF]);
 
   if (!currentPDF) {
     return (
