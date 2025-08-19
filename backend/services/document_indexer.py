@@ -1,174 +1,135 @@
 # backend/services/document_indexer.py
-import json
-import uuid
 import asyncio
+import json
+import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Any
-import time
-import logging
+from typing import List, Dict, Any, Optional
 from datetime import datetime
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 
-from backend.core.config import settings
 from backend.services.pdf_processor import PDFProcessor
-from backend.utils.text_processing import TextProcessor
-
-logger = logging.getLogger(__name__)
+from backend.services.cache_manager import CacheManager
+from backend.core.config import settings
 
 class DocumentIndexer:
+    """Manages document indexing and processing pipeline"""
+    
     def __init__(self):
-        self.indexed_docs: Dict[str, Dict] = {}
         self.pdf_processor = PDFProcessor()
-        self.text_processor = TextProcessor()
-        self.index_file = settings.PROCESSED_DIR / "document_index.json"
+        self.cache_manager = CacheManager()
+        self.executor = ThreadPoolExecutor(max_workers=settings.NUM_WORKERS)
+        self.indexed_docs = {}
+        self.processing_queue = asyncio.Queue()
+        self._load_index()
     
     async def initialize(self):
-        """Initialize the document indexer"""
-        # Load any existing processed documents
-        self.load_index()
-        logger.info(f"DocumentIndexer initialized with {len(self.indexed_docs)} documents")
-    
-    async def cleanup(self):
-        """Cleanup and save index"""
-        self.save_index()
-    
-    def load_index(self):
-        """Load existing document index from file"""
-        try:
-            if self.index_file.exists():
-                with open(self.index_file, 'r', encoding='utf-8') as f:
-                    self.indexed_docs = json.load(f)
-                logger.info(f"Loaded {len(self.indexed_docs)} documents from index")
-            else:
-                self.indexed_docs = {}
-                logger.info("No existing index found, starting fresh")
-        except Exception as e:
-            logger.error(f"Error loading index: {e}")
-            self.indexed_docs = {}
-    
-    def save_index(self):
-        """Save document index to file"""
-        try:
-            with open(self.index_file, 'w', encoding='utf-8') as f:
-                json.dump(self.indexed_docs, f, indent=2, ensure_ascii=False)
-            logger.info(f"Saved index with {len(self.indexed_docs)} documents")
-        except Exception as e:
-            logger.error(f"Error saving index: {e}")
-    
-    async def process_bulk_upload(self, file_paths: List[Path]) -> Dict[str, Any]:
-        """Process multiple PDF files for bulk upload"""
-        start_time = time.time()
-        successful = []
-        failed = []
+        """Initialize indexer and load existing documents"""
+        # Load previously indexed documents
+        existing_docs = list(settings.PROCESSED_DIR.glob("*.json"))
         
-        for file_path in file_paths:
+        for doc_path in existing_docs:
             try:
-                result = await self._process_single_document(file_path, is_fresh=False)
-                successful.append({
-                    'doc_id': result['doc_id'],
-                    'title': result['title'],
-                    'pages': result['pages'],
-                    'sections': len(result['sections']),
-                    'path': str(result['path'])
-                })
-                logger.info(f"Successfully processed: {result['title']}")
-                
+                with open(doc_path, 'r') as f:
+                    doc_data = json.load(f)
+                    self.indexed_docs[doc_data['doc_id']] = doc_data
+                    print(f"Loaded indexed document: {doc_data['title']}")
             except Exception as e:
-                logger.error(f"Failed to process {file_path.name}: {e}")
-                failed.append({
-                    'filename': file_path.name,
-                    'error': str(e)
-                })
-        
-        # Save updated index
-        self.save_index()
-        
-        total_time = time.time() - start_time
-        
-        return {
-            'successful': successful,
-            'failed': failed,
-            'total_time': total_time
+                print(f"Failed to load {doc_path}: {e}")
+    
+    async def process_bulk_upload(self, pdf_files: List[Path]) -> Dict[str, Any]:
+        """Process multiple PDFs (past documents)"""
+        results = {
+            'successful': [],
+            'failed': [],
+            'total_time': 0
         }
-    
-    async def process_fresh_document(self, file_path: Path, original_filename: str = None) -> Dict[str, Any]:
-        """Process a single fresh document"""
-        result = await self._process_single_document(file_path, is_fresh=True, original_filename=original_filename)
-        self.save_index()
-        return result
-    
-    async def _process_single_document(self, file_path: Path, is_fresh: bool = False, original_filename: str = None) -> Dict[str, Any]:
-        """Process a single PDF document"""
-        doc_id = str(uuid.uuid4())
         
+        start_time = datetime.now()
+        
+        # Process in parallel with asyncio
+        tasks = []
+        for pdf_file in pdf_files[:settings.MAX_UPLOAD_FILES]:
+            task = self._process_single_document(pdf_file)
+            tasks.append(task)
+        
+        # Wait for all processing
+        processed = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Collect results
+        for i, result in enumerate(processed):
+            if isinstance(result, Exception):
+                results['failed'].append({
+                    'file': str(pdf_files[i].name),
+                    'error': str(result)
+                })
+            else:
+                results['successful'].append(result)
+        
+        results['total_time'] = (datetime.now() - start_time).total_seconds()
+        
+        return results
+    
+    async def process_fresh_document(self, pdf_file: Path) -> Dict[str, Any]:
+        """Process a new document (current reading document)"""
+        return await self._process_single_document(pdf_file, is_fresh=True)
+    
+    async def _process_single_document(self, pdf_file: Path, 
+                                      is_fresh: bool = False) -> Dict[str, Any]:
+        """Process a single PDF document"""
         try:
-            # Extract PDF content
-            pdf_data = await self.pdf_processor.extract_pdf_content(file_path)
+            # Check if already processed
+            doc_hash = self._get_file_hash(pdf_file)
+            cached_result = await self.cache_manager.get_cached_document(doc_hash)
             
-            # Process sections and add snippets
-            sections = []
-            for section_data in pdf_data['sections']:
-                section_id = str(uuid.uuid4())
-                
-                # Clean content
-                content = self.text_processor.clean_text(section_data['content'])
-                
-                # Extract snippets from content
-                snippets = self.text_processor.extract_snippets(
-                    content,
-                    max_sentences=settings.SNIPPET_LENGTH
-                )
-                
-                section = {
-                    'section_id': section_id,
-                    'doc_id': doc_id,
-                    'heading': section_data['heading'],
-                    'level': section_data['level'],
-                    'content': content,
-                    'page_num': section_data['page_num'],
-                    'start_page': section_data.get('start_page', section_data['page_num']),
-                    'end_page': section_data.get('end_page', section_data['page_num']),
-                    'snippets': snippets,
-                    'word_count': len(content.split())
-                }
-                sections.append(section)
+            if cached_result and not is_fresh:
+                print(f"Using cached result for {pdf_file.name}")
+                return cached_result
             
-            # Copy file to uploads directory
-            filename = original_filename or file_path.name
-            final_path = settings.UPLOAD_DIR / f"{doc_id}_{filename}"
-            import shutil
-            shutil.copy2(file_path, final_path)
+            # Process PDF in thread pool (CPU-bound task)
+            loop = asyncio.get_event_loop()
+            doc_structure = await loop.run_in_executor(
+                self.executor,
+                self.pdf_processor.extract_document_structure,
+                pdf_file
+            )
             
-            # Store document
-            document = {
+            # Save processed document
+            doc_id = doc_structure['doc_id']
+            
+            # Copy PDF to uploads directory
+            upload_path = settings.UPLOAD_DIR / f"{doc_id}.pdf"
+            if not upload_path.exists():
+                shutil.copy2(pdf_file, upload_path)
+            
+            # Save processed structure
+            processed_path = settings.PROCESSED_DIR / f"{doc_id}.json"
+            with open(processed_path, 'w') as f:
+                json.dump(doc_structure, f, indent=2)
+            
+            # Update index
+            self.indexed_docs[doc_id] = doc_structure
+            
+            # Cache result
+            await self.cache_manager.cache_document(doc_hash, doc_structure)
+            
+            # Return summary
+            return {
                 'doc_id': doc_id,
-                'title': pdf_data['title'],
-                'pages': pdf_data['pages'],
-                'sections': sections,
-                'path': str(final_path),
+                'title': doc_structure['title'],
+                'pages': doc_structure['pages'],
+                'sections': len(doc_structure['sections']),
+                'path': str(upload_path),
                 'is_fresh': is_fresh,
-                'metadata': pdf_data.get('metadata', {}),
-                'created_at': datetime.now().isoformat(),
                 'processed_at': datetime.now().isoformat()
             }
             
-            self.indexed_docs[doc_id] = document
-            
-            # Save individual document file
-            doc_file = settings.PROCESSED_DIR / f"{doc_id}.json"
-            with open(doc_file, 'w', encoding='utf-8') as f:
-                json.dump(document, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"Processed document: {document['title']} with {len(sections)} sections")
-            
-            return document
-            
         except Exception as e:
-            logger.error(f"Error processing document {file_path}: {e}")
+            print(f"Error processing {pdf_file.name}: {e}")
             raise
     
     def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
-        """Get document by ID"""
+        """Get processed document by ID"""
         return self.indexed_docs.get(doc_id)
     
     def get_all_documents(self) -> List[Dict[str, Any]]:
@@ -177,7 +138,7 @@ class DocumentIndexer:
     
     def get_section(self, doc_id: str, section_id: str) -> Optional[Dict[str, Any]]:
         """Get specific section from document"""
-        doc = self.get_document(doc_id)
+        doc = self.indexed_docs.get(doc_id)
         if not doc:
             return None
         
@@ -187,27 +148,58 @@ class DocumentIndexer:
         
         return None
     
-    def get_all_sections(self) -> List[Dict[str, Any]]:
-        """Get all sections from all documents"""
-        all_sections = []
-        for doc in self.indexed_docs.values():
-            for section in doc['sections']:
-                section_copy = section.copy()
-                section_copy['doc_title'] = doc['title']
-                section_copy['doc_path'] = doc['path']
-                all_sections.append(section_copy)
-        return all_sections
+    def _get_file_hash(self, file_path: Path) -> str:
+        """Generate hash of file content"""
+        hasher = hashlib.sha256()
+        with open(file_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(4096), b''):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+    
+    def _load_index(self):
+        """Load document index from disk"""
+        index_file = settings.DATA_DIR / "document_index.json"
+        if index_file.exists():
+            try:
+                with open(index_file, 'r') as f:
+                    self.indexed_docs = json.load(f)
+            except Exception as e:
+                print(f"Failed to load index: {e}")
+                self.indexed_docs = {}
+    
+    def _save_index(self):
+        """Save document index to disk"""
+        index_file = settings.DATA_DIR / "document_index.json"
+        try:
+            # Create summary index
+            index_data = {}
+            for doc_id, doc in self.indexed_docs.items():
+                index_data[doc_id] = {
+                    'title': doc['title'],
+                    'pages': doc['pages'],
+                    'sections': len(doc['sections']),
+                    'path': doc['path']
+                }
+            
+            with open(index_file, 'w') as f:
+                json.dump(index_data, f, indent=2)
+        except Exception as e:
+            print(f"Failed to save index: {e}")
+    
+    async def cleanup(self):
+        """Cleanup resources"""
+        self._save_index()
+        self.executor.shutdown(wait=True)
     
     def get_statistics(self) -> Dict[str, Any]:
-        """Get indexer statistics"""
-        total_docs = len(self.indexed_docs)
+        """Get indexing statistics"""
         total_sections = sum(len(doc['sections']) for doc in self.indexed_docs.values())
         total_pages = sum(doc['pages'] for doc in self.indexed_docs.values())
         
         return {
-            'total_documents': total_docs,
+            'total_documents': len(self.indexed_docs),
             'total_sections': total_sections,
             'total_pages': total_pages,
-            'index_file_exists': self.index_file.exists(),
-            'last_updated': datetime.now().isoformat()
+            'average_sections_per_doc': total_sections / max(len(self.indexed_docs), 1),
+            'average_pages_per_doc': total_pages / max(len(self.indexed_docs), 1)
         }

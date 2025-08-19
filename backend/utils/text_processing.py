@@ -1,9 +1,11 @@
+# backend/utils/text_processing.py
 import re
+from typing import List, Tuple
 import nltk
-from typing import List, Dict, Any
-from nltk.tokenize import sent_tokenize, word_tokenize
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
 
-# Download required NLTK data
+# Download NLTK data
 try:
     nltk.data.find('tokenizers/punkt')
 except LookupError:
@@ -15,44 +17,75 @@ except LookupError:
     nltk.download('stopwords', quiet=True)
 
 class TextProcessor:
-    """Text processing utilities"""
+    """Handles text processing utilities"""
     
-    def __init__(self):
-        pass
-    
-    def clean_text(self, text: str) -> str:
+    @staticmethod
+    def clean_text(text: str) -> str:
         """Clean and normalize text"""
         if not text:
             return ""
         
-        # Remove control characters
-        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
-        
+        # Remove special characters
+        text = re.sub(r'[^\w\s-]', ' ', text)
         # Normalize whitespace
-        text = re.sub(r'\s+', ' ', text)
-        
-        # Remove excessive newlines
-        text = re.sub(r'\n+', '\n', text)
-        
-        return text.strip()
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text.lower()
     
-    def extract_snippets(self, content: str, max_sentences: int = 3) -> List[str]:
-        """Extract meaningful snippets from content"""
-        if not content:
+    @staticmethod
+    def extract_key_phrases(text: str, top_n: int = 5) -> List[Tuple[str, float]]:
+        """Extract key phrases from text using TF-IDF"""
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        
+        # Tokenize sentences
+        sentences = nltk.sent_tokenize(text)
+        if not sentences:
             return []
         
-        # Split into sentences
-        sentences = sent_tokenize(content)
+        # Create TF-IDF model
+        vectorizer = TfidfVectorizer(
+            ngram_range=(1, 2),
+            stop_words=stopwords.words('english'),
+            max_features=100
+        )
         
-        # If content is short enough, return as is
-        if len(sentences) <= max_sentences:
-            return [content]
+        try:
+            tfidf_matrix = vectorizer.fit_transform(sentences)
+            feature_names = vectorizer.get_feature_names_out()
+            
+            # Get top features
+            sums = tfidf_matrix.sum(axis=0)
+            data = []
+            
+            for col, term in enumerate(feature_names):
+                data.append((term, sums[0, col]))
+            
+            # Sort by score
+            data.sort(key=lambda x: x[1], reverse=True)
+            
+            return data[:top_n]
+        except:
+            # Fallback to simple word frequency
+            words = [word for word in word_tokenize(text) 
+                    if word.lower() not in stopwords.words('english')]
+            freq = nltk.FreqDist(words)
+            return freq.most_common(top_n)
+    
+    @staticmethod
+    def find_contradictions(text1: str, text2: str) -> List[str]:
+        """Find potential contradictions between two texts"""
+        contradictions = []
         
-        # Extract snippets by taking consecutive sentence groups
-        snippets = []
-        for i in range(0, len(sentences), max_sentences):
-            snippet = ' '.join(sentences[i:i + max_sentences])
-            if len(snippet.strip()) > 30:  # Only meaningful snippets
-                snippets.append(snippet.strip())
+        # Simple contradiction detection
+        negation_words = {'not', 'no', 'never', 'none', 'neither', 'nor'}
         
-        return snippets[:5]  # Limit to 5 snippets max
+        words1 = set(word_tokenize(text1.lower()))
+        words2 = set(word_tokenize(text2.lower()))
+        
+        # Check for negated concepts
+        for word in words1:
+            if word in negation_words:
+                for other_word in words2:
+                    if other_word not in negation_words and word in words1:
+                        contradictions.append(f"{word} vs {other_word}")
+        
+        return contradictions
