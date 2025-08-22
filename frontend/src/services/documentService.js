@@ -1,4 +1,39 @@
-import apiClient from './apiClient';
+import axios from 'axios';
+
+// Create axios instance with base configuration
+const apiClient = axios.create({
+  baseURL: process.env.NODE_ENV === 'production' 
+    ? '/api' 
+    : 'http://localhost:8080/api',
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Add request interceptor for auth if needed
+apiClient.interceptors.request.use(
+  (config) => {
+    // Add auth token if available
+    const token = localStorage.getItem('authToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor for error handling
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error('API Error:', error);
+    return Promise.reject(error);
+  }
+);
 
 const documentService = {
   /**
@@ -8,10 +43,10 @@ const documentService = {
    */
   uploadDocuments: async (files) => {
     const formData = new FormData();
-    files.forEach(file => formData.append('documents', file));
+    files.forEach(file => formData.append('files', file));
 
     try {
-      const response = await apiClient.post('/documents/upload', formData, {
+      const response = await apiClient.post('/documents/upload/bulk', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -24,49 +59,31 @@ const documentService = {
   },
 
   /**
-   * Process a document for text extraction and analysis
-   * @param {string} documentId - ID of the document to process
-   * @returns {Promise<{sections: Array, metadata: object}>} Document structure and metadata
-   */
-  processDocument: async (documentId) => {
-    try {
-      const response = await apiClient.post(`/documents/${documentId}/process`);
-      return {
-        sections: response.sections,
-        metadata: response.metadata
-      };
-    } catch (error) {
-      console.error('Document processing failed:', error);
-      throw new Error('Failed to process document');
-    }
-  },
-
-  /**
-   * Get document metadata and content structure
-   * @param {string} documentId - ID of the document
-   * @returns {Promise<{metadata: object, sections: Array}>} Document info
-   */
-  getDocument: async (documentId) => {
-    try {
-      const response = await apiClient.get(`/documents/${documentId}`);
-      return response;
-    } catch (error) {
-      console.error('Failed to fetch document:', error);
-      throw new Error('Document not found');
-    }
-  },
-
-  /**
    * Get all user documents
    * @returns {Promise<Array<{id: string, name: string, uploadDate: string}>>} List of documents
    */
   getAllDocuments: async () => {
     try {
-      const response = await apiClient.get('/documents');
-      return response.documents;
+      const response = await apiClient.get('/documents/list');
+      return response.data.documents || [];
     } catch (error) {
       console.error('Failed to fetch documents:', error);
       throw new Error('Failed to load documents');
+    }
+  },
+
+  /**
+   * Get document details
+   * @param {string} documentId - ID of the document
+   * @returns {Promise<{metadata: object, sections: Array}>} Document info
+   */
+  getDocumentDetails: async (documentId) => {
+    try {
+      const response = await apiClient.get(`/documents/${documentId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch document:', error);
+      throw new Error('Document not found');
     }
   },
 
@@ -85,51 +102,19 @@ const documentService = {
   },
 
   /**
-   * Search within a document
-   * @param {string} documentId - ID of the document to search
-   * @param {string} query - Search query
-   * @returns {Promise<Array<{page: number, text: string, score: number}>>} Search results
+   * Search for related sections
+   * @param {Object} params - Search parameters
+   * @param {string} params.selected_text - The selected text
+   * @param {string} params.current_doc_id - Current document ID
+   * @returns {Promise<Array>} Related sections
    */
-  searchDocument: async (documentId, query) => {
+  findRelatedSections: async (params) => {
     try {
-      const response = await apiClient.post(`/documents/${documentId}/search`, { query });
-      return response.results;
-    } catch (error) {
-      console.error('Document search failed:', error);
-      throw new Error('Search failed');
-    }
-  },
-
-  /**
-   * Get related sections across documents
-   * @param {string} sourceDocumentId - Source document ID
-   * @param {string} sectionId - Section ID to find relations for
-   * @returns {Promise<Array<{documentId: string, section: object, similarity: number}>>} Related sections
-   */
-  getRelatedSections: async (sourceDocumentId, sectionId) => {
-    try {
-      const response = await apiClient.get(
-        `/documents/${sourceDocumentId}/sections/${sectionId}/related`
-      );
-      return response.relatedSections;
+      const response = await apiClient.post('/selection/related', params);
+      return response.data.related_sections || [];
     } catch (error) {
       console.error('Failed to find related sections:', error);
       throw new Error('Failed to find related content');
-    }
-  },
-
-  /**
-   * Get document statistics and analytics
-   * @param {string} documentId - ID of the document
-   * @returns {Promise<{wordCount: number, sectionCount: number, readingTime: number}>} Document stats
-   */
-  getDocumentStats: async (documentId) => {
-    try {
-      const response = await apiClient.get(`/documents/${documentId}/stats`);
-      return response.stats;
-    } catch (error) {
-      console.error('Failed to fetch document stats:', error);
-      throw new Error('Failed to load document analytics');
     }
   }
 };
