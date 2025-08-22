@@ -3,12 +3,13 @@ import asyncio
 import uvicorn
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional
 import logging
 import sys
+import os
 
 # Configure logging
 logging.basicConfig(
@@ -21,7 +22,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Import services
+# Import services and schemas
 from backend.services.document_indexer import DocumentIndexer
 from backend.services.semantic_search import SemanticSearchEngine
 from backend.models.schemas import (
@@ -30,8 +31,8 @@ from backend.models.schemas import (
     DocumentListResponse,
     DocumentResponse
 )
-from backend.api.routes.health import router as health_router
 from backend.core.config import settings
+from fastapi.staticfiles import StaticFiles
 
 # Global service instances
 indexer = None
@@ -89,17 +90,40 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# ====================================================================
+# Middleware Configuration
+# ====================================================================
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure properly for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(health_router, prefix="/api", tags=["health"])
+# ====================================================================
+# API Routes - Import and include routers FIRST
+# ====================================================================
+
+# Import API routers
+try:
+    from backend.api.routes.health import router as health_router
+    from backend.api.routes.documents import router as documents_router
+    from backend.api.routes.selection import router as selection_router
+    
+    # Include routers with proper prefixes
+    app.include_router(health_router, prefix="/api/health", tags=["health"])
+    app.include_router(documents_router, prefix="/api/documents", tags=["documents"])
+    app.include_router(selection_router, prefix="/api/search", tags=["search"])
+    
+except ImportError as e:
+    logger.warning(f"Could not import all routers: {e}. Using direct endpoints.")
+
+# ====================================================================
+# Direct API Endpoints (fallback if routers aren't available)
+# ====================================================================
 
 @app.post("/api/documents/upload", response_model=DocumentResponse)
 async def upload_document(
@@ -164,7 +188,7 @@ async def upload_document(
         
     except Exception as e:
         logger.error(f"Document processing failed: {e}")
-        if temp_path.exists() and not temp_path.name.startswith(result.get('doc_id', '')):
+        if 'result' in locals() and temp_path.exists() and not temp_path.name.startswith(result.get('doc_id', '')):
             temp_path.unlink()  # Clean up temp file
         raise HTTPException(500, f"Document processing failed: {str(e)}")
 
@@ -244,7 +268,7 @@ async def search_related_sections(request: SelectionRequest):
             selected_text=request.selected_text,
             current_doc_id=request.current_doc_id,
             related_sections=results,
-            processing_time=0.0,  # You can add timing if needed
+            processing_time=0.0,
             from_cache=False
         )
         
@@ -349,15 +373,16 @@ async def delete_document(doc_id: str):
         logger.error(f"Failed to delete document: {e}")
         raise HTTPException(500, f"Failed to delete document: {str(e)}")
 
-@app.get("/")
-async def root():
-    """Root endpoint"""
-    return {
-        "name": settings.APP_NAME,
-        "version": "1.0.0",
-        "status": "running",
-        "docs": "/docs"
-    }
+# ====================================================================
+# Static File Serving - Mount LAST to serve frontend
+# ====================================================================
+
+# Define the directory where your frontend's static files are located
+FRONTEND_BUILD_DIR = Path(__file__).parent / "static"
+logger.info(f"Frontend static files will be served from: {FRONTEND_BUILD_DIR}")
+
+# Mount the static files directory LAST
+app.mount("/", StaticFiles(directory=FRONTEND_BUILD_DIR, html=True), name="static")
 
 if __name__ == "__main__":
     uvicorn.run(

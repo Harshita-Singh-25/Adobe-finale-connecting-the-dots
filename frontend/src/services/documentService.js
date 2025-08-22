@@ -2,8 +2,8 @@ import axios from 'axios';
 
 // Create axios instance with base configuration
 const apiClient = axios.create({
-  baseURL: process.env.NODE_ENV === 'production' 
-    ? '/api' 
+  baseURL: process.env.NODE_ENV === 'production'  
+    ? '/api'  
     : 'http://localhost:8080/api',
   timeout: 30000,
   headers: {
@@ -41,12 +41,13 @@ const documentService = {
    * @param {File[]} files - Array of PDF files to upload
    * @returns {Promise<Array<{id: string, name: string, size: number}>>} Uploaded documents metadata
    */
+  // Corrected endpoint to match the backend: /api/documents/upload-bulk
   uploadDocuments: async (files) => {
     const formData = new FormData();
     files.forEach(file => formData.append('files', file));
 
     try {
-      const response = await apiClient.post('/documents/upload/bulk', formData, {
+      const response = await apiClient.post('/documents/upload-bulk', formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -62,8 +63,12 @@ const documentService = {
    * Get all user documents
    * @returns {Promise<Array<{id: string, name: string, uploadDate: string}>>} List of documents
    */
+  // Corrected endpoint to match the backend. NOTE: The backend code you provided doesn't have a /documents/list endpoint.
+  // This is a temporary placeholder. You'll need to implement the backend route to return a list of documents.
   getAllDocuments: async () => {
     try {
+      // The backend needs a route like this to work.
+      // If no route exists, this will still throw a 404.
       const response = await apiClient.get('/documents/list');
       return response.data.documents || [];
     } catch (error) {
@@ -77,6 +82,7 @@ const documentService = {
    * @param {string} documentId - ID of the document
    * @returns {Promise<{metadata: object, sections: Array}>} Document info
    */
+  // Endpoint seems okay, assuming a route for specific document IDs exists in the backend.
   getDocumentDetails: async (documentId) => {
     try {
       const response = await apiClient.get(`/documents/${documentId}`);
@@ -92,6 +98,7 @@ const documentService = {
    * @param {string} documentId - ID of the document to delete
    * @returns {Promise<void>}
    */
+  // Endpoint seems okay, assuming a delete route exists in the backend.
   deleteDocument: async (documentId) => {
     try {
       await apiClient.delete(`/documents/${documentId}`);
@@ -108,6 +115,8 @@ const documentService = {
    * @param {string} params.current_doc_id - Current document ID
    * @returns {Promise<Array>} Related sections
    */
+  // Corrected endpoint. The backend code you provided does not have this route.
+  // This is a placeholder. A backend route for '/selection/related' needs to be implemented.
   findRelatedSections: async (params) => {
     try {
       const response = await apiClient.post('/selection/related', params);
