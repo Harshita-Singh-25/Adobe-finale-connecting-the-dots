@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
     """Application configuration with environment variable support"""
     
@@ -48,7 +49,7 @@ class Settings(BaseSettings):
     USE_GPU: bool = False
     
     # External APIs (from environment)
-    #ADOBE_EMBED_API_KEY: Optional[str] = os.getenv("ADOBE_EMBED_API_KEY")
+    # ADOBE_EMBED_API_KEY: Optional[str] = os.getenv("ADOBE_EMBED_API_KEY")
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "gemini")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
@@ -60,10 +61,16 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"   # 👈 NEW: ignore unknown env vars like VITE_*
+
 
 settings = Settings()
 
 # Create directories if they don't exist
-for dir_path in [settings.UPLOAD_DIR, settings.PROCESSED_DIR, 
-                 settings.EMBEDDINGS_DIR, settings.CACHE_DIR]:
+for dir_path in [
+    settings.UPLOAD_DIR,
+    settings.PROCESSED_DIR,
+    settings.EMBEDDINGS_DIR,
+    settings.CACHE_DIR,
+]:
     dir_path.mkdir(parents=True, exist_ok=True)

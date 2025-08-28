@@ -8,6 +8,14 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
+
+# Ignore Python virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+
 # Build outputs
 dist/
 build/
