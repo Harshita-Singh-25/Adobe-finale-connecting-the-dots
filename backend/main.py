@@ -53,6 +53,18 @@ async def lifespan(app: FastAPI):
     await indexer.initialize()
     await search_engine.initialize()
     
+    # Set global variables in the routes module
+    import backend.api.routes.documents as documents_module
+    import backend.api.routes.selection as selection_module
+    import backend.api.routes.health as health_module
+    documents_module.indexer = indexer
+    documents_module.search_engine = search_engine
+    selection_module.indexer = indexer
+    selection_module.search_engine = search_engine
+    selection_module.cache_manager = indexer.cache_manager
+    health_module.indexer = indexer
+    health_module.search_engine = search_engine
+    
     # Process any existing documents in the uploads directory
     existing_pdfs = list(settings.UPLOAD_DIR.glob("*.pdf"))
     if existing_pdfs:
@@ -94,13 +106,20 @@ app = FastAPI(
 # Middleware Configuration
 # ====================================================================
 
-# Configure CORS
+# Configure CORS - More specific for development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",  # Vite dev server
+        "http://localhost:3000",  # Alternative dev port
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+        "*"  # Fallback for production
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # ====================================================================
@@ -142,6 +161,39 @@ if not FRONTEND_BUILD_DIR.exists():
             "docs": "/docs",
             "api_health": "/api/health"
         }
+    
+    @app.get("/test")
+    async def test():
+        return {
+            "message": "Test endpoint working",
+            "timestamp": "2025-08-29T22:30:00"
+        }
+    
+    @app.get("/api/test-simple")
+    async def test_simple():
+        return {
+            "message": "Simple API endpoint working",
+            "timestamp": "2025-08-29T22:30:00"
+        }
+    
+    @app.get("/api/debug")
+    async def debug_info():
+        """Debug endpoint to check service status"""
+        try:
+            return {
+                "message": "Debug endpoint working",
+                "services": {
+                    "indexer": indexer is not None,
+                    "search_engine": search_engine is not None
+                },
+                "timestamp": "2025-08-29T22:30:00"
+            }
+        except Exception as e:
+            return {
+                "message": "Debug endpoint error",
+                "error": str(e),
+                "timestamp": "2025-08-29T22:30:00"
+            }
 else:
     # Mount the static files directory LAST
     app.mount("/", StaticFiles(directory=FRONTEND_BUILD_DIR, html=True), name="static")

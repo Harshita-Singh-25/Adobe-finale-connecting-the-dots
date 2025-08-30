@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create axios instance with base configuration
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:8080/api',
+  baseURL: import.meta.env.VITE_API_BASE || 'http://localhost:8000/api',
   timeout: 20000,
   headers: {
     'Content-Type': 'application/json',
@@ -59,91 +59,5 @@ apiClient.interceptors.response.use(
   }
 );
 
-// PDF Document Service
-const documentService = {
-  uploadDocuments: async (files) => {
-    const formData = new FormData();
-    files.forEach(file => formData.append('documents', file));
-    
-    return apiClient.post('/documents/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    });
-  },
-
-  processDocument: async (documentId) => {
-    return apiClient.post(`/documents/${documentId}/process`);
-  },
-
-  getDocument: async (documentId) => {
-    return apiClient.get(`/documents/${documentId}`);
-  },
-
-  getAllDocuments: async () => {
-    return apiClient.get('/documents');
-  },
-
-  deleteDocument: async (documentId) => {
-    return apiClient.delete(`/documents/${documentId}`);
-  }
-};
-
-// Semantic Search Service
-const searchService = {
-  findRelatedSections: async (documentId, selectedText) => {
-    return apiClient.post('/search/related', {
-      documentId,
-      text: selectedText
-    });
-  },
-
-  semanticSearch: async (query, documentIds) => {
-    return apiClient.post('/search/semantic', {
-      query,
-      documentIds
-    });
-  }
-};
-
-// Insights Service
-const insightsService = {
-  generateInsights: async (documentId, selectedText) => {
-    return apiClient.post('/insights/generate', {
-      documentId,
-      text: selectedText
-    });
-  },
-
-  getInsightTypes: async () => {
-    return apiClient.get('/insights/types');
-  },
-
-  saveInsight: async (insightData) => {
-    return apiClient.post('/insights/save', insightData);
-  }
-};
-
-// Audio Service
-const audioService = {
-  generateAudioSummary: async (content, options = {}) => {
-    return apiClient.post('/audio/generate', {
-      content,
-      options
-    });
-  },
-
-  getAudioTranscript: async (audioId) => {
-    return apiClient.get(`/audio/${audioId}/transcript`);
-  }
-};
-
-export default {
-  ...documentService,
-  ...searchService,
-  ...insightsService,
-  ...audioService,
-  
-  // Raw axios instance for custom requests
-  raw: apiClient
-};
+// Export only the raw axios instance to avoid conflicts with actual service files
+export default apiClient;

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     
     # Server settings
     HOST: str = "0.0.0.0"
-    PORT: int = 8080
+    PORT: int = 8000
     
     # File paths
     BASE_DIR: Path = Path(__file__).parent.parent.parent

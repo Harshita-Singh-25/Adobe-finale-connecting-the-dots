@@ -1,15 +1,4 @@
-import axios from 'axios';
-
-// Create axios instance with base configuration
-const apiClient = axios.create({
-  baseURL: process.env.NODE_ENV === 'production'  
-    ? '/api'  
-    : 'http://localhost:8080/api',
-  timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+import apiClient from './apiClient';
 
 // Add request interceptor for auth if needed
 apiClient.interceptors.request.use(
@@ -30,7 +19,21 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('API Error:', error);
+    console.error('API Error Details:', {
+      message: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      data: error.response?.data,
+      config: {
+        url: error.config?.url,
+        method: error.config?.method,
+        baseURL: error.config?.baseURL,
+        headers: error.config?.headers
+      },
+      isNetworkError: !error.response,
+      isCorsError: error.message?.includes('CORS') || error.message?.includes('Access-Control'),
+      fullError: error
+    });
     return Promise.reject(error);
   }
 );
@@ -41,21 +44,39 @@ const documentService = {
    * @param {File[]} files - Array of PDF files to upload
    * @returns {Promise<Array<{id: string, name: string, size: number}>>} Uploaded documents metadata
    */
-  // Corrected endpoint to match the backend: /api/documents/upload-bulk
+  // Corrected endpoint to match the backend: /api/documents/upload/bulk
   uploadDocuments: async (files) => {
     const formData = new FormData();
     files.forEach(file => formData.append('files', file));
 
     try {
-      const response = await apiClient.post('/documents/upload-bulk', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
+      console.log('Attempting to upload documents to:', apiClient.defaults.baseURL + '/documents/upload/bulk');
+      console.log('Files to upload:', files.map(f => ({ name: f.name, size: f.size, type: f.type })));
+      
+      const response = await apiClient.post('/documents/upload/bulk', formData);
+      
+      console.log('Upload response:', response);
       return response.data;
     } catch (error) {
-      console.error('Document upload failed:', error);
-      throw new Error('Failed to upload documents');
+      console.error('Document upload failed - Detailed Error:', {
+        error: error,
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        isCors: error.message?.includes('CORS') || error.message?.includes('Access-Control'),
+        isNetwork: !error.response
+      });
+      
+      if (error.message?.includes('CORS') || error.message?.includes('Access-Control')) {
+        throw new Error('CORS Error: Backend server is not allowing uploads from frontend. Check CORS configuration.');
+      } else if (!error.response) {
+        throw new Error('Network Error: Cannot connect to backend server during upload. Make sure it\'s running on port 8000.');
+      } else if (error.response.status === 405) {
+        throw new Error('Method Not Allowed: The upload endpoint does not accept POST requests. Check backend route configuration.');
+      } else {
+        throw new Error(`Upload failed: ${error.response.status} ${error.response.statusText}`);
+      }
     }
   },
 
@@ -63,17 +84,31 @@ const documentService = {
    * Get all user documents
    * @returns {Promise<Array<{id: string, name: string, uploadDate: string}>>} List of documents
    */
-  // Corrected endpoint to match the backend. NOTE: The backend code you provided doesn't have a /documents/list endpoint.
-  // This is a temporary placeholder. You'll need to implement the backend route to return a list of documents.
+  // Corrected endpoint to match the backend: /api/documents/list
   getAllDocuments: async () => {
     try {
-      // The backend needs a route like this to work.
-      // If no route exists, this will still throw a 404.
+      console.log('Attempting to fetch documents from:', apiClient.defaults.baseURL + '/documents/list');
       const response = await apiClient.get('/documents/list');
+      console.log('Documents response:', response);
       return response.data.documents || [];
     } catch (error) {
-      console.error('Failed to fetch documents:', error);
-      throw new Error('Failed to load documents');
+      console.error('Failed to fetch documents - Detailed Error:', {
+        error: error,
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        isCors: error.message?.includes('CORS') || error.message?.includes('Access-Control'),
+        isNetwork: !error.response
+      });
+      
+      if (error.message?.includes('CORS') || error.message?.includes('Access-Control')) {
+        throw new Error('CORS Error: Backend server is not allowing requests from frontend. Check CORS configuration.');
+      } else if (!error.response) {
+        throw new Error('Network Error: Cannot connect to backend server. Make sure it\'s running on port 8000.');
+      } else {
+        throw new Error(`Failed to load documents: ${error.response.status} ${error.response.statusText}`);
+      }
     }
   },
 

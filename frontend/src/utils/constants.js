@@ -34,7 +34,7 @@ export const ENV = {
 
   // Development
   DEBUG_MODE: import.meta.env.VITE_DEBUG_MODE === 'true',
-  API_BASE_URL: import.meta.env.VITE_API_BASE || 'http://localhost:8080/api'
+  API_BASE_URL: import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
 };
 
 // API Configuration

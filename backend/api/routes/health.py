@@ -1,5 +1,5 @@
 # backend/api/routes/health.py
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 import psutil
 import torch
@@ -12,9 +12,22 @@ from backend.services.semantic_search import SemanticSearchEngine
 
 router = APIRouter()
 
-# Service instances
-indexer = DocumentIndexer()
-search_engine = SemanticSearchEngine()
+# Service instances from main.py
+# These will be initialized in the lifespan context manager
+indexer = None
+search_engine = None
+
+def get_indexer():
+    """Get the initialized indexer instance"""
+    if indexer is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    return indexer
+
+def get_search_engine():
+    """Get the initialized search engine instance"""
+    if search_engine is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    return search_engine
 
 @router.get("/health")
 async def health_check():
@@ -52,8 +65,11 @@ async def system_status():
             gpu_info = {"available": False}
         
         # Service status
-        indexer_stats = indexer.get_statistics()
-        search_stats = search_engine.get_statistics()
+        indexer_instance = get_indexer()
+        search_engine_instance = get_search_engine()
+        
+        indexer_stats = indexer_instance.get_statistics()
+        search_stats = search_engine_instance.get_statistics()
         
         # Directory sizes
         dir_sizes = {}

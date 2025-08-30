@@ -15,10 +15,29 @@ from backend.models.schemas import (
 
 router = APIRouter()
 
-# Get service instances
-search_engine = SemanticSearchEngine()
-indexer = DocumentIndexer()
-cache_manager = CacheManager()
+# Get service instances from main.py
+# These will be initialized in the lifespan context manager
+search_engine = None
+indexer = None
+cache_manager = None
+
+def get_search_engine():
+    """Get the initialized search engine instance"""
+    if search_engine is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    return search_engine
+
+def get_indexer():
+    """Get the initialized indexer instance"""
+    if indexer is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    return indexer
+
+def get_cache_manager():
+    """Get the initialized cache manager instance"""
+    if cache_manager is None:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    return cache_manager
 
 @router.post("/related", response_model=RelatedSectionsResponse)
 async def find_related_sections(request: SelectionRequest):
@@ -32,13 +51,17 @@ async def find_related_sections(request: SelectionRequest):
             detail="Selected text must be at least 10 characters"
         )
     
+    # Get service instances
+    cache_manager_instance = get_cache_manager()
+    search_engine_instance = get_search_engine()
+    
     # Check cache
-    query_hash = cache_manager.get_query_hash(
+    query_hash = cache_manager_instance.get_query_hash(
         request.selected_text, 
         request.current_doc_id
     )
     
-    cached_results = await cache_manager.get_cached_search(query_hash)
+    cached_results = await cache_manager_instance.get_cached_search(query_hash)
     if cached_results:
         return RelatedSectionsResponse(
             selected_text=request.selected_text,
@@ -49,7 +72,7 @@ async def find_related_sections(request: SelectionRequest):
         )
     
     # Perform search
-    results = search_engine.search_related_sections(
+    results = search_engine_instance.search_related_sections(
         selected_text=request.selected_text,
         current_doc_id=request.current_doc_id,
         top_k=request.top_k if request.top_k is not None else settings.TOP_K_SECTIONS
@@ -75,7 +98,7 @@ async def find_related_sections(request: SelectionRequest):
         related_sections.append(section)
     
     # Cache results
-    await cache_manager.cache_search(query_hash, related_sections)
+    await cache_manager_instance.cache_search(query_hash, related_sections)
     
     processing_time = time.time() - start_time
     
@@ -94,7 +117,8 @@ async def navigate_to_section(
     page_num: Optional[int] = None
 ):
     """Get navigation information for a specific section"""
-    section = indexer.get_section(doc_id, section_id)
+    indexer_instance = get_indexer()
+    section = indexer_instance.get_section(doc_id, section_id)
     
     if not section:
         raise HTTPException(
@@ -102,7 +126,7 @@ async def navigate_to_section(
             detail=f"Section {section_id} not found"
         )
     
-    doc = indexer.get_document(doc_id)
+    doc = indexer_instance.get_document(doc_id)
     if not doc:
         raise HTTPException(
             status_code=404,
