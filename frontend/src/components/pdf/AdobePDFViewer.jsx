@@ -29,6 +29,61 @@ const waitForAdobeAPI = () => {
   });
 };
 
+// Helper function to validate PDF file
+const validatePDFFile = async (file) => {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      reject(new Error('No file provided'));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const arrayBuffer = e.target.result;
+        const uint8Array = new Uint8Array(arrayBuffer);
+        
+        // Check PDF header (first 4 bytes should be %PDF)
+        if (uint8Array.length < 4) {
+          reject(new Error('File is too small to be a valid PDF'));
+          return;
+        }
+        
+        const header = String.fromCharCode(uint8Array[0], uint8Array[1], uint8Array[2], uint8Array[3]);
+        if (header !== '%PDF') {
+          reject(new Error('File does not appear to be a valid PDF (missing PDF header)'));
+          return;
+        }
+        
+        // Check for PDF version (should be 1.x)
+        const versionStart = 4;
+        let versionEnd = versionStart;
+        while (versionEnd < uint8Array.length && uint8Array[versionEnd] !== 0x0A && uint8Array[versionEnd] !== 0x0D) {
+          versionEnd++;
+        }
+        
+        const versionBytes = uint8Array.slice(versionStart, versionEnd);
+        const version = String.fromCharCode(...versionBytes);
+        
+        if (!version.match(/^\d+\.\d+$/)) {
+          console.warn('PDF version may be invalid:', version);
+        }
+        
+        console.log('PDF validation passed:', { size: arrayBuffer.byteLength, version });
+        resolve(arrayBuffer);
+      } catch (error) {
+        reject(new Error('Failed to validate PDF file: ' + error.message));
+      }
+    };
+    
+    reader.onerror = () => {
+      reject(new Error('Failed to read file for validation'));
+    };
+    
+    reader.readAsArrayBuffer(file);
+  });
+};
+
 const AdobePDFViewer = ({ documentId }) => {
   const viewerRef = useRef(null);
   const [adobeViewer, setAdobeViewer] = useState(null);
@@ -76,14 +131,53 @@ const AdobePDFViewer = ({ documentId }) => {
       });
 
       // Prepare file as an ArrayBuffer promise for local file usage
-      const filePromise = currentPDF.file?.arrayBuffer
-        ? currentPDF.file.arrayBuffer()
-        : new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsArrayBuffer(currentPDF.file);
+      let filePromise;
+      
+      if (currentPDF.file?.arrayBuffer) {
+        // It's a proper File object - validate first
+        filePromise = validatePDFFile(currentPDF.file).catch(error => {
+          console.error('PDF validation failed:', error);
+          throw new Error('PDF file validation failed: ' + error.message);
+        });
+      } else if (currentPDF.file?.url) {
+        // It's a URL-based file reference - fetch and validate
+        filePromise = fetch(currentPDF.file.url)
+          .then(response => {
+            if (!response.ok) {
+              throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`);
+            }
+            return response.arrayBuffer();
+          })
+          .then(arrayBuffer => {
+            // Validate the PDF content directly
+            const uint8Array = new Uint8Array(arrayBuffer);
+            
+            // Check PDF header (first 4 bytes should be %PDF)
+            if (uint8Array.length < 4) {
+              throw new Error('File is too small to be a valid PDF');
+            }
+            
+            const header = String.fromCharCode(uint8Array[0], uint8Array[1], uint8Array[2], uint8Array[3]);
+            if (header !== '%PDF') {
+              throw new Error('File does not appear to be a valid PDF (missing PDF header)');
+            }
+            
+            console.log('PDF validation passed for URL-based file:', { size: arrayBuffer.byteLength });
+            return arrayBuffer;
+          })
+          .catch(error => {
+            console.error('Error fetching or validating PDF from URL:', error);
+            throw new Error('Failed to load PDF from server: ' + error.message);
           });
+      } else if (currentPDF.file) {
+        // It's a File object without arrayBuffer method - validate first
+        filePromise = validatePDFFile(currentPDF.file).catch(error => {
+          console.error('PDF validation failed:', error);
+          throw new Error('PDF file validation failed: ' + error.message);
+        });
+      } else {
+        throw new Error('No file available for viewing');
+      }
 
       const previewConfig = {
         embedMode: 'SIZED_CONTAINER',
@@ -102,32 +196,8 @@ const AdobePDFViewer = ({ documentId }) => {
         enableAccessibility: false
       };
 
-      // Register feature flag callbacks to prevent errors
-      const registerFeatureFlagCallbacks = () => {
-        const featureFlags = [
-          'enable-tools-multidoc',
-          'edit-config',
-          'enable-accessibility',
-          'preview-config',
-          'enable-inline-organize',
-          'enable-pdf-request-signatures',
-          'DCWeb_edit_image_experiment'
-        ];
-
-        featureFlags.forEach(flag => {
-          try {
-            adobeDCView.registerCallback(
-              `GET_FEATURE_FLAG:${flag}`,
-              () => false,
-              false
-            );
-          } catch (error) {
-            console.warn(`Could not register callback for feature flag: ${flag}`);
-          }
-        });
-      };
-
-      registerFeatureFlagCallbacks();
+      // Note: Feature flag registration removed as these callbacks are not supported
+      // by the current version of Adobe PDF Embed API
 
       // Preview the file using a promise for local files
       const previewPromise = adobeDCView.previewFile(
@@ -229,7 +299,22 @@ const AdobePDFViewer = ({ documentId }) => {
 
     } catch (error) {
       console.error('Error initializing Adobe PDF viewer:', error);
-      setError(error.message || 'Failed to initialize PDF viewer. Please check your Adobe API key and internet connection.');
+      
+      // Handle specific Adobe errors
+      if (error.message?.includes('corrupt') || 
+          error.message?.includes('t5::corrupt_data') ||
+          error.message?.includes('corruptFile') ||
+          error.message?.includes('corrupt_data')) {
+        setError('PDF file appears to be corrupted or invalid. Please try uploading a different PDF file or re-upload the current one.');
+      } else if (error.message?.includes('Failed to fetch PDF')) {
+        setError('Failed to load PDF file from server. Please try again.');
+      } else if (error.message?.includes('Failed to read PDF file')) {
+        setError('Failed to read PDF file. The file may be corrupted or in an unsupported format.');
+      } else if (error.message?.includes('Adobe API key')) {
+        setError('Adobe API key not configured. Please check your environment variables.');
+      } else {
+        setError(error.message || 'Failed to initialize PDF viewer. Please check your Adobe API key and internet connection.');
+      }
     } finally {
       setIsLoading(false);
     }

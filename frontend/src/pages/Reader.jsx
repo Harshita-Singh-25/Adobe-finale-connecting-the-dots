@@ -24,7 +24,7 @@ const Reader = () => {
       );
       
       if (document) {
-        setAsCurrentDocument(document);
+        setAsCurrentDocument(document.id);
       } else {
         console.warn('Document not found in uploaded documents:', documentId);
       }

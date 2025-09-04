@@ -120,7 +120,19 @@ const documentService = {
       console.log('Attempting to fetch documents from:', apiClient.defaults.baseURL + '/documents/list');
       const response = await apiClient.get('/documents/list');
       console.log('Documents response:', response);
-      return response.data.documents || [];
+      console.log('Response data:', response.data);
+      
+      // Handle different response structures
+      if (response.data && response.data.documents) {
+        return response.data.documents;
+      } else if (Array.isArray(response.data)) {
+        return response.data;
+      } else if (response.data && Array.isArray(response.data.data)) {
+        return response.data.data;
+      } else {
+        console.warn('Unexpected response structure:', response.data);
+        return [];
+      }
     } catch (error) {
       console.error('Failed to fetch documents - Detailed Error:', {
         error: error,
@@ -150,11 +162,28 @@ const documentService = {
   // Endpoint seems okay, assuming a route for specific document IDs exists in the backend.
   getDocumentDetails: async (documentId) => {
     try {
+      console.log('Fetching document details for:', documentId);
       const response = await apiClient.get(`/documents/${documentId}`);
-      return response.data;
+      console.log('Document details response:', response);
+      console.log('Document details data:', response.data);
+      
+      // Handle different response structures
+      if (response.data) {
+        return response.data;
+      } else if (response) {
+        return response;
+      } else {
+        throw new Error('No data received from server');
+      }
     } catch (error) {
       console.error('Failed to fetch document:', error);
-      throw new Error('Document not found');
+      if (error.response?.status === 404) {
+        throw new Error('Document not found');
+      } else if (error.response?.status >= 500) {
+        throw new Error('Server error while fetching document');
+      } else {
+        throw new Error('Failed to fetch document: ' + (error.message || 'Unknown error'));
+      }
     }
   },
 
@@ -170,6 +199,23 @@ const documentService = {
     } catch (error) {
       console.error('Failed to delete document:', error);
       throw new Error('Failed to delete document');
+    }
+  },
+
+  /**
+   * Get PDF file content for viewing
+   * @param {string} documentId - ID of the document
+   * @returns {Promise<Blob>} PDF file blob
+   */
+  getPDFFile: async (documentId) => {
+    try {
+      const response = await apiClient.get(`/documents/${documentId}/file`, {
+        responseType: 'blob'
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch PDF file:', error);
+      throw new Error('Failed to load PDF file');
     }
   },
 

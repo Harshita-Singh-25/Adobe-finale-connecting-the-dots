@@ -219,11 +219,17 @@ async def list_documents():
     for i, doc in enumerate(documents):
         try:
             # Make the route more robust by handling missing fields
+            sections_count = doc.get('sections', 0)
+            if isinstance(sections_count, list):
+                sections_count = len(sections_count)
+            elif not isinstance(sections_count, int):
+                sections_count = 0
+                
             doc_info = {
                 'doc_id': doc.get('doc_id', f'unknown_{i}'),
                 'title': doc.get('title', 'Untitled Document'),
                 'pages': doc.get('pages', 0),
-                'sections': len(doc.get('sections', [])),
+                'sections': sections_count,
                 'path': doc.get('path', 'Unknown path')
             }
             doc_list.append(doc_info)
@@ -239,10 +245,12 @@ async def list_documents():
                 'path': 'Error'
             })
     
-    return DocumentListResponse(
+    response = DocumentListResponse(
         documents=doc_list,
         total=len(doc_list)
     )
+    print(f"DEBUG: Returning response with {len(doc_list)} documents")
+    return response
 
 @router.get("/test")
 async def test_route():
@@ -274,6 +282,49 @@ async def get_document(doc_id: str):
         path=doc['path'],
         metadata=doc.get('metadata', {}),
         outline=doc['sections']
+    )
+
+@router.get("/{doc_id}/file")
+async def get_document_file(doc_id: str):
+    """Get the actual PDF file for viewing"""
+    indexer_instance = get_indexer()
+    doc = indexer_instance.get_document(doc_id)
+    
+    if not doc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Document {doc_id} not found"
+        )
+    
+    # Try multiple possible file locations
+    possible_paths = [
+        Path(doc['path']),
+        settings.UPLOAD_DIR / Path(doc['path']).name,
+        settings.UPLOAD_DIR / f"{doc_id}.pdf",
+        Path(f"data/uploads/{doc_id}.pdf"),
+        Path(f"data/uploads/{Path(doc['path']).name}")
+    ]
+    
+    file_path = None
+    for path in possible_paths:
+        if path.exists():
+            file_path = path
+            break
+    
+    if not file_path:
+        print(f"DEBUG: File not found for doc {doc_id}")
+        print(f"DEBUG: Original path: {doc['path']}")
+        print(f"DEBUG: Tried paths: {[str(p) for p in possible_paths]}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"PDF file not found for document {doc_id}. Tried: {[str(p) for p in possible_paths]}"
+        )
+    
+    from fastapi.responses import FileResponse
+    return FileResponse(
+        path=str(file_path),
+        media_type='application/pdf',
+        filename=doc['title'] + '.pdf'
     )
 
 @router.get("/{doc_id}/sections/{section_id}", response_model=SectionResponse)

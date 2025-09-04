@@ -68,25 +68,81 @@ export const PDFProvider = ({ children }) => {
   }, []);
 
 
-  // Set current document for viewing
-  const setAsCurrentDocument = useCallback(async (documentId) => {
-    if (documentStructures[documentId]) {
-      setCurrentDocument(documentStructures[documentId]);
-      return;
-    }
-    
-    try {
-      const documentDetails = await documentService.getDocumentDetails(documentId);
-      setDocumentStructures(prev => ({
-        ...prev,
-        [documentId]: documentDetails
-      }));
-      setCurrentDocument(documentDetails);
-    } catch (error) {
-      console.error('Failed to set current document:', error);
-      toast.error('Failed to load document details.');
-    }
-  }, [documentStructures]);
+  // Set current document for viewing
+  const setAsCurrentDocument = useCallback(async (documentId) => {
+    if (documentStructures[documentId]) {
+      setCurrentDocument(documentStructures[documentId]);
+      return;
+    }
+    
+    try {
+      // First get document details
+      const documentDetails = await documentService.getDocumentDetails(documentId);
+      console.log('Document details received:', documentDetails);
+      
+      if (!documentDetails) {
+        throw new Error('Document details not found');
+      }
+      
+      // Try to fetch the actual PDF file, but don't fail if it's not available
+      let file = null;
+      const fileName = documentDetails?.title || 'document.pdf';
+      
+      try {
+        const pdfFile = await documentService.getPDFFile(documentId);
+        // Create a File object from the blob
+        file = new File([pdfFile], fileName, {
+          type: 'application/pdf'
+        });
+        console.log('PDF file loaded successfully:', { name: fileName, size: pdfFile.size, type: pdfFile.type });
+      } catch (fileError) {
+        console.warn('Could not load PDF file, will use URL instead:', fileError);
+        // Fallback: create a URL-based file reference
+        file = {
+          name: fileName,
+          type: 'application/pdf',
+          url: `http://localhost:8000/api/documents/${documentId}/file`
+        };
+        console.log('Using URL fallback for PDF file:', file.url);
+      }
+      
+      const documentWithFile = {
+        ...documentDetails,
+        file: file,
+        name: documentDetails?.title || fileName
+      };
+      
+      setDocumentStructures(prev => ({
+        ...prev,
+        [documentId]: documentWithFile
+      }));
+      setCurrentDocument(documentWithFile);
+    } catch (error) {
+      console.error('Failed to set current document:', error);
+      
+      // Fallback: try to create a minimal document object and load PDF directly
+      try {
+        console.log('Attempting fallback: loading PDF directly');
+        const pdfFile = await documentService.getPDFFile(documentId);
+        const file = new File([pdfFile], 'document.pdf', {
+          type: 'application/pdf'
+        });
+        
+        const fallbackDocument = {
+          doc_id: documentId,
+          title: 'Document',
+          file: file,
+          name: 'Document'
+        };
+        
+        setCurrentDocument(fallbackDocument);
+        console.log('Fallback document loaded successfully');
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+        toast.error('Failed to load document. Please try again.');
+      }
+    }
+  }, [documentStructures]);
 
   // Get related sections for selected text
   const getRelevantSections = useCallback(async (selectedText, currentDocId) => {

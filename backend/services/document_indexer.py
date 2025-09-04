@@ -32,6 +32,18 @@ class DocumentIndexer:
             try:
                 with open(doc_path, 'r') as f:
                     doc_data = json.load(f)
+                    
+                    # Fix path if it's pointing to temp directory
+                    if 'AppData\\Local\\Temp' in doc_data.get('path', '') or 'tmp' in doc_data.get('path', ''):
+                        doc_id = doc_data['doc_id']
+                        correct_path = settings.UPLOAD_DIR / f"{doc_id}.pdf"
+                        if correct_path.exists():
+                            doc_data['path'] = str(correct_path)
+                            # Save the corrected data
+                            with open(doc_path, 'w') as f:
+                                json.dump(doc_data, f, indent=2)
+                            print(f"Fixed path for document: {doc_data['title']}")
+                    
                     self.indexed_docs[doc_data['doc_id']] = doc_data
                     print(f"Loaded indexed document: {doc_data['title']}")
             except Exception as e:
@@ -101,6 +113,9 @@ class DocumentIndexer:
             upload_path = settings.UPLOAD_DIR / f"{doc_id}.pdf"
             if not upload_path.exists():
                 shutil.copy2(pdf_file, upload_path)
+            
+            # Update the document structure with the correct upload path
+            doc_structure['path'] = str(upload_path)
             
             # Save processed structure
             processed_path = settings.PROCESSED_DIR / f"{doc_id}.json"
