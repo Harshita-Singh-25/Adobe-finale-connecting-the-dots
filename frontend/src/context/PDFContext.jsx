@@ -38,24 +38,24 @@ export const PDFProvider = ({ children }) => {
         return [];
       }
 
-      // The `documentService.uploadDocuments` function now directly handles the upload
-      // and returns the metadata. The backend should handle all the processing.
-      const uploadedDocuments = await documentService.uploadDocuments(pdfFiles);
-      
-      // Assuming the backend returns a list of successfully processed documents
-      const successfullyUploaded = uploadedDocuments.successful || [];
+      // The backend returns BulkUploadResponse with `documents` array
+      const uploadResponse = await documentService.uploadDocuments(pdfFiles);
+      const uploadedDocs = uploadResponse.documents || [];
 
-      // Update state with the newly uploaded documents
-      setPdfDocuments(prev => [...prev, ...successfullyUploaded.map(doc => ({
-        id: doc.doc_id,
-        name: doc.title || doc.filename,
-        processed: true, // Assuming processing is done on the backend
-        sections: [], // Placeholder
-        metadata: {} // Placeholder
-      }))]);
-      
-      toast.success(`Successfully uploaded ${successfullyUploaded.length} documents`);
-      return successfullyUploaded;
+      // Update state with the newly uploaded documents
+      setPdfDocuments(prev => [
+        ...prev,
+        ...uploadedDocs.map(doc => ({
+          id: doc.doc_id,
+          name: doc.title || doc.filename,
+          processed: true,
+          sectionsCount: doc.sections,
+          metadata: {}
+        }))
+      ]);
+      
+      toast.success(`Successfully uploaded ${uploadedDocs.length} documents`);
+      return uploadedDocs;
 
     } catch (error) {
       console.error('Upload failed:', error);

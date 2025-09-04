@@ -46,8 +46,38 @@ const documentService = {
    */
   // Corrected endpoint to match the backend: /api/documents/upload/bulk
   uploadDocuments: async (files) => {
+    // Validate files
+    if (!files || !Array.isArray(files) || files.length === 0) {
+      throw new Error('No files provided');
+    }
+    
+    // Check if each file is a valid File object
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!(file instanceof File)) {
+        throw new Error(`File at index ${i} is not a valid File object`);
+      }
+      if (!file.name || file.size === 0) {
+        throw new Error(`File at index ${i} is empty or invalid`);
+      }
+    }
+    
+    console.log('Files to upload:', files);
+    console.log('First file:', files[0]);
+    console.log('First file type:', typeof files[0]);
+    console.log('First file constructor:', files[0].constructor.name);
+    
     const formData = new FormData();
-    files.forEach(file => formData.append('files', file));
+    files.forEach((file, index) => {
+      console.log(`Appending file ${index}:`, file.name, file.size, file.type);
+      formData.append('files', file);
+    });
+    
+    console.log('FormData created:', formData);
+    console.log('FormData entries:');
+    for (let [key, value] of formData.entries()) {
+      console.log(`Key: ${key}, Value:`, value);
+    }
 
     try {
       console.log('Attempting to upload documents to:', apiClient.defaults.baseURL + '/documents/upload/bulk');

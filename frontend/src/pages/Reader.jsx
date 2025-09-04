@@ -5,6 +5,8 @@ import { useSelection } from '../context/SelectionContext';
 import InsightBulb from "../components/insights/InsightBulb";
 import { RelatedSnippetsList as SnippetPanel } from "../components/insights/RelatedSnippetsList";
 import AdobePDFViewer from "../components/pdf/AdobePDFViewer";
+import { FileText } from 'lucide-react';
+import { Button } from '../components/common/Button';
 
 const Reader = () => {
   const { documentId } = useParams();
@@ -78,6 +80,38 @@ const Reader = () => {
 
   return (
     <div className="flex h-screen bg-gray-100">
+      {/* Library Sidebar */}
+      <div className="w-72 bg-white border-r border-gray-200 hidden md:flex md:flex-col">
+        <div className="p-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-800">Your Library</h3>
+          <p className="text-xs text-gray-500">Uploaded PDFs</p>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {pdfDocuments.length === 0 ? (
+            <div className="p-4 text-sm text-gray-500">No documents uploaded</div>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {pdfDocuments.map(doc => (
+                <li key={doc.id} className={`p-3 cursor-pointer hover:bg-gray-50 ${currentDocument?.doc_id === doc.id ? 'bg-blue-50' : ''}`}
+                    onClick={() => setAsCurrentDocument(doc.id)}>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 rounded bg-blue-50 text-blue-600 flex items-center justify-center">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{doc.name}</p>
+                      {doc.size && (
+                        <p className="text-xs text-gray-500">{Math.round(doc.size / 1024)} KB</p>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
       {/* Main PDF Viewer Area */}
       <div className="flex-1 p-4">
         <div className="bg-white rounded-lg shadow-md h-full flex flex-col">

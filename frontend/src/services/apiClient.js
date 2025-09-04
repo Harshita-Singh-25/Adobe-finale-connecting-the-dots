@@ -18,6 +18,12 @@ apiClient.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    // If sending FormData, remove the Content-Type header to let browser set it automatically
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+    }
+    
     return config;
   },
   (error) => {
@@ -28,6 +34,10 @@ apiClient.interceptors.request.use(
 // Response interceptor for handling errors globally
 apiClient.interceptors.response.use(
   (response) => {
+    // Don't modify the response for FormData uploads
+    if (response.config.data instanceof FormData) {
+      return response;
+    }
     return response.data;
   },
   (error) => {
@@ -55,7 +65,8 @@ apiClient.interceptors.response.use(
       console.error('Request Error:', error.message);
     }
     
-    return Promise.reject(error.response?.data || error.message);
+    // Preserve the original error for better debugging
+    return Promise.reject(error);
   }
 );
 

@@ -6,7 +6,7 @@ import { Upload, FileText, ChevronRight, Search } from 'lucide-react';
 import { Button } from '../components/common/Button'; // CORRECTED IMPORT PATH
 
 const Home = () => {
-  const { uploadPDFs, isLoading } = usePDF();
+  const { uploadPDFs, isLoading, pdfDocuments, hasDocuments } = usePDF();
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
@@ -18,7 +18,7 @@ const Home = () => {
     try {
       const uploadedDocuments = await uploadPDFs(files);
       if (uploadedDocuments.length > 0) {
-        navigate(`/reader/${uploadedDocuments[0].id}`);
+        navigate(`/reader/${uploadedDocuments[0].doc_id}`);
       }
     } catch (error) {
       console.error('Error processing files:', error);
@@ -119,6 +119,43 @@ const Home = () => {
             Supported: PDF files • Max 100MB per file
           </p>
           
+          {hasDocuments && (
+            <div className="bg-white rounded-lg p-6 border border-gray-200 mb-8 text-left">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-800">Your Library</h3>
+                <button
+                  onClick={() => navigate('/reader')}
+                  className="text-sm text-blue-600 hover:underline"
+                >
+                  Open Reader
+                </button>
+              </div>
+              <ul className="divide-y divide-gray-100">
+                {pdfDocuments.slice(0, 8).map((doc) => (
+                  <li key={doc.id} className="py-2 flex items-center justify-between">
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <div className="w-8 h-8 rounded bg-blue-50 text-blue-600 flex items-center justify-center">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{doc.name}</p>
+                        {doc.size && (
+                          <p className="text-xs text-gray-500">{Math.round(doc.size / 1024)} KB</p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => navigate(`/reader/${doc.id}`)}
+                      className="text-blue-600 hover:text-blue-800 text-sm inline-flex items-center"
+                    >
+                      Open <ChevronRight className="w-4 h-4 ml-1" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="bg-gray-50 rounded-lg p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">
               How it works:

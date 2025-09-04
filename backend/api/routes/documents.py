@@ -105,10 +105,33 @@ async def upload_bulk_documents(
             if doc:
                 background_tasks.add_task(search_engine_instance.add_document, doc)
         
+        # Normalize document summaries to match schema (sections must be int)
+        normalized_docs = []
+        for doc in results['successful']:
+            try:
+                normalized_docs.append({
+                    'doc_id': doc.get('doc_id'),
+                    'title': doc.get('title'),
+                    'pages': doc.get('pages', 0),
+                    'sections': len(doc.get('sections', [])) if isinstance(doc.get('sections'), list) else int(doc.get('sections', 0)),
+                    'path': doc.get('path'),
+                    'is_fresh': bool(doc.get('is_fresh', False))
+                })
+            except Exception:
+                # Fallback if anything unexpected appears
+                normalized_docs.append({
+                    'doc_id': doc.get('doc_id'),
+                    'title': doc.get('title', 'Untitled Document'),
+                    'pages': int(doc.get('pages', 0)),
+                    'sections': 0,
+                    'path': doc.get('path', ''),
+                    'is_fresh': False
+                })
+
         return BulkUploadResponse(
             success=True,
-            message=f"Processed {len(results['successful'])} documents successfully",
-            documents=results['successful'],
+            message=f"Processed {len(normalized_docs)} documents successfully",
+            documents=normalized_docs,
             failed=results['failed'],
             processing_time=results['total_time']
         )
