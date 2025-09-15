@@ -103,8 +103,17 @@ __pycache__/
 *.pyd
 
 
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# Vector indexes
+data/*.faiss
+data/*.pkl
+data/index/*
+
+
+# Vector indexes and embeddings
+data/*.json
+data/**/*.faiss
+data/**/*.pkl
+
+# Uploaded documents
+data/uploads/*
+
