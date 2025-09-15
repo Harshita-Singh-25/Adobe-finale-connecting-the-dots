@@ -117,3 +117,10 @@ data/**/*.pkl
 # Uploaded documents
 data/uploads/*
 
+# Ignore all FAISS indexes
+*.index
+*.pkl
+
+# Ignore uploads and embeddings
+data/uploads/
+data/embeddings/
