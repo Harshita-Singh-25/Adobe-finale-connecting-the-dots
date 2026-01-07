@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams , useNavigate} from 'react-router-dom';
 import { usePDF } from '../context/PDFContext';
 import { useSelection } from '../context/SelectionContext';
 import InsightBulb from "../components/insights/InsightBulb";
@@ -10,6 +10,7 @@ import { Button } from '../components/common/Button';
 
 const Reader = () => {
   const { documentId } = useParams();
+  const navigate = useNavigate(); // Initialize navigate
   const { currentDocument, getRelevantSections, pdfDocuments, setAsCurrentDocument } = usePDF();
   const { selectedText } = useSelection();
   const [snippets, setSnippets] = useState([]);
@@ -105,7 +106,7 @@ const Reader = () => {
             <ul className="divide-y divide-gray-100">
               {pdfDocuments.map(doc => (
                 <li key={doc.id} className={`p-3 cursor-pointer hover:bg-gray-50 ${currentDocument?.doc_id === doc.id ? 'bg-blue-50' : ''}`}
-                    onClick={() => setAsCurrentDocument(doc.id)}>
+                    onClick={() => navigate(`/reader/${doc.id}`)}>
                   <div className="flex items-center space-x-3">
                     <div className="w-8 h-8 rounded bg-blue-50 text-blue-600 flex items-center justify-center">
                       <FileText className="w-4 h-4" />

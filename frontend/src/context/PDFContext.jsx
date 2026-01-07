@@ -94,7 +94,7 @@ export const PDFProvider = ({ children }) => {
         file = new File([pdfFile], fileName, {
           type: 'application/pdf'
         });
-        console.log('PDF file loaded successfully:', { name: fileName, size: pdfFile.size, type: pdfFile.type });
+        console.log('PDF file loaded successfully:', { name: fileName, size: pdfFile?.size, type: pdfFile?.type });
       } catch (fileError) {
         console.warn('Could not load PDF file, will use URL instead:', fileError);
         // Fallback: create a URL-based file reference
