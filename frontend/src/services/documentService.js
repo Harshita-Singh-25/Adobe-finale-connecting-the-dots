@@ -117,40 +117,36 @@ const documentService = {
   // Corrected endpoint to match the backend: /api/documents/list
   getAllDocuments: async () => {
     try {
-      console.log('Attempting to fetch documents from:', apiClient.defaults.baseURL + '/documents/list');
       const response = await apiClient.get('/documents/list');
-      console.log('Documents response:', response);
-      console.log('Response data:', response.data);
       
-      // Handle different response structures
-      if (response.data && response.data.documents) {
-        return response.data.documents;
-      } else if (Array.isArray(response.data)) {
-        return response.data;
-      } else if (response.data && Array.isArray(response.data.data)) {
-        return response.data.data;
+      // Support Axios (.data) or standard Fetch response structures
+      const rawData = response.data || response; 
+      let docs = [];
+
+      if (rawData && rawData.documents) {
+        docs = rawData.documents;
+      } else if (Array.isArray(rawData)) {
+        docs = rawData;
       } else {
-        console.warn('Unexpected response structure:', response.data);
-        return [];
+        return []; // Return empty array if structure is totally wrong
       }
+
+      // MAP THE KEYS: This is what fixes your "No documents uploaded" sidebar!
+      return docs.map(doc => ({
+        ...doc,
+        id: doc.doc_id || doc.id,
+        name: doc.title || doc.name || 'Untitled Document',
+        processed: true
+      }));
+
     } catch (error) {
-      console.error('Failed to fetch documents - Detailed Error:', {
-        error: error,
-        message: error.message,
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        isCors: error.message?.includes('CORS') || error.message?.includes('Access-Control'),
-        isNetwork: !error.response
-      });
-      
-      if (error.message?.includes('CORS') || error.message?.includes('Access-Control')) {
-        throw new Error('CORS Error: Backend server is not allowing requests from frontend. Check CORS configuration.');
+      // Keep the specific error throwing so your Toaster notifications work
+      if (error.message?.includes('CORS')) {
+        throw new Error('CORS Error: Check your backend allowed_origins.');
       } else if (!error.response) {
-        throw new Error('Network Error: Cannot connect to backend server. Make sure it\'s running on port 8000.');
-      } else {
-        throw new Error(`Failed to load documents: ${error.response.status} ${error.response.statusText}`);
+        throw new Error('Network Error: Is the FastAPI server running on port 8000?');
       }
+      throw error; // Pass the original error up to the Context
     }
   },
 
