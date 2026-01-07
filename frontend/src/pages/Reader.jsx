@@ -15,6 +15,18 @@ const Reader = () => {
   const [snippets, setSnippets] = useState([]);
   const [isLoadingSnippets, setIsLoadingSnippets] = useState(false);
 
+
+  // Load the document when documentId changes or on Page Refresh
+  useEffect(() => {
+    if (documentId) {
+      // If the state is empty (refresh) or the wrong document is loaded
+      if (!currentDocument || currentDocument.doc_id !== documentId) {
+        console.log('Rehydrating document from URL ID:', documentId);
+        setAsCurrentDocument(documentId);
+      }
+    }
+  }, [documentId, currentDocument, setAsCurrentDocument]);
+  
   // Load the document when documentId changes
   useEffect(() => {
     if (documentId && pdfDocuments.length > 0) {
