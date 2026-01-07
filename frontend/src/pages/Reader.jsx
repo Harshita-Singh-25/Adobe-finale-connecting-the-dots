@@ -26,22 +26,22 @@ const Reader = () => {
       }
     }
   }, [documentId, currentDocument, setAsCurrentDocument]);
-  
+
   // Load the document when documentId changes
-  useEffect(() => {
-    if (documentId && pdfDocuments.length > 0) {
-      // Find the document in your uploaded documents
-      const document = pdfDocuments.find(doc => 
-        doc.id === documentId || doc.id.toString() === documentId
-      );
+  // useEffect(() => {
+  //   if (documentId && pdfDocuments.length > 0) {
+  //     // Find the document in your uploaded documents
+  //     const document = pdfDocuments.find(doc => 
+  //       doc.id === documentId || doc.id.toString() === documentId
+  //     );
       
-      if (document) {
-        setAsCurrentDocument(document.id);
-      } else {
-        console.warn('Document not found in uploaded documents:', documentId);
-      }
-    }
-  }, [documentId, pdfDocuments, setAsCurrentDocument]);
+  //     if (document) {
+  //       setAsCurrentDocument(document.id);
+  //     } else {
+  //       console.warn('Document not found in uploaded documents:', documentId);
+  //     }
+  //   }
+  // }, [documentId, pdfDocuments, setAsCurrentDocument]);
 
   const fetchRelevantSections = useCallback(async (text) => {
     if (!text || text.trim().length < 3) {
