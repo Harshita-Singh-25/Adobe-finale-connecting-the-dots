@@ -89,19 +89,31 @@ export const PDFProvider = ({ children }) => {
       const fileName = documentDetails?.title || 'document.pdf';
       
       try {
-        const pdfFile = await documentService.getPDFFile(documentId);
+        const pdfBlob = await documentService.getPDFFile(documentId);
+
+        // CRITICAL: Check if we actually got a blob
+        if(pdfBlob && (pdfBlob.size > 0 || pdfBlob.byteLength > 0)) {
         // Create a File object from the blob
-        file = new File([pdfFile], fileName, {
-          type: 'application/pdf'
-        });
-        console.log('PDF file loaded successfully:', { name: fileName, size: pdfFile?.size, type: pdfFile?.type });
-      } catch (fileError) {
-        console.warn('Could not load PDF file, will use URL instead:', fileError);
+            file = new File([pdfBlob], fileName, {type: 'application/pdf'});
+            console.log('PDF file loaded successfully:', { 
+              name: fileName, 
+              size: file.size, 
+              type: file.type 
+          });
+        } else{
+              // ⭐⭐⭐ FORCES ERROR! ⭐⭐⭐
+        throw new Error('Received empty PDF blob from server');
+        }
+      }
+      catch (fileError) {
+        console.warn('Could not load PDF file, falling back to url instead:', fileError, fileError.message);
         // Fallback: create a URL-based file reference
         file = {
           name: fileName,
           type: 'application/pdf',
-          url: `http://localhost:8000/api/documents/${documentId}/file`
+          url: `http://localhost:8000/api/documents/${documentId}/file`,
+          isFallbackUrl: true // Flag for the viewer
+
         };
         console.log('Using URL fallback for PDF file:', file.url);
       }
