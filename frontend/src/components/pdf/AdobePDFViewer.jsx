@@ -89,12 +89,15 @@ const AdobePDFViewer = ({ documentId }) => {
   const [adobeViewer, setAdobeViewer] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const { currentDocument: currentPDF } = usePDF();
   const { handleTextSelection } = useSelection();
+  const [currentPage, setCurrentPage] = useState(1);
+  const currentPageRef = useRef(1);
+
+
 
   // Initialize Adobe Viewer
   const initializeAdobeViewer = useCallback(async () => {
@@ -219,20 +222,7 @@ const AdobePDFViewer = ({ documentId }) => {
 
       // Page info callback with error handling
       try {
-        if (CallbackType.GET_PAGE_INFO) {
-          adobeDCView.registerCallback(
-            CallbackType.GET_PAGE_INFO,
-            (data) => {
-              if (data && typeof data.pageNumber === 'number') {
-                setCurrentPage(data.pageNumber);
-              }
-              if (data && typeof data.totalPages === 'number') {
-                setTotalPages(data.totalPages);
-              }
-            },
-            false
-          );
-        } else if (CallbackType.PAGE_VIEW_CHANGE) {
+         if (CallbackType.PAGE_VIEW_CHANGE) {
           adobeDCView.registerCallback(
             CallbackType.PAGE_VIEW_CHANGE,
             (data) => {
@@ -252,35 +242,26 @@ const AdobePDFViewer = ({ documentId }) => {
 
       // Text selection callback with error handling
       try {
-        if (CallbackType.TEXT_SELECTION_END) {
+        //Sometimes Adobe uses TEXT_SELECTED instead of TEXT_SELECTION_END depending on the version.
+        const selectionCallback = CallbackType.TEXT_SELECTION_END || CallbackType.TEXT_SELECTED;  
+        if (selectionCallback) {
           adobeDCView.registerCallback(
-            CallbackType.TEXT_SELECTION_END,
+            selectionCallback,
             (event) => {
+
+              // log to confirm which callback is being used and adobe is catching the highlight
+              console.log('Text selection event received:', event);
               if (event && event.data && event.data.text) {
                 handleTextSelection(
                   event.data.text,
-                  { x: event.clientX, y: event.clientY },
+                  { x: event.clientX || 0 , y: event.clientY || 0 },
                   { pageNumber: currentPage, documentId: documentId }
                 );
               }
             },
-            false
+            { enableTextSelectionEvents: true } // Some SDK versions require this flag
           );
-        } else if (CallbackType.TEXT_SELECTED) {
-          adobeDCView.registerCallback(
-            CallbackType.TEXT_SELECTED,
-            (event) => {
-              if (event && event.data && event.data.text) {
-                handleTextSelection(
-                  event.data.text,
-                  { x: event.clientX, y: event.clientY },
-                  { pageNumber: currentPage, documentId: documentId }
-                );
-              }
-            },
-            false
-          );
-        }
+        } 
       } catch (error) {
         console.warn('Could not register text selection callback:', error);
       }
