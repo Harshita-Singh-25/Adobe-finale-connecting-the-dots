@@ -196,7 +196,8 @@ const AdobePDFViewer = ({ documentId }) => {
         enableFormFillingAPIs: false,
         enableDigitalSignatures: false,
         enableEditingAPIs: false,
-        enableAccessibility: false
+        enableAccessibility: false,
+        enableTextSelectionEvents: true, // MUST be true here
       };
 
       // Note: Feature flag registration removed as these callbacks are not supported
@@ -220,24 +221,48 @@ const AdobePDFViewer = ({ documentId }) => {
       const CallbackType =
         (window.AdobeDC && window.AdobeDC.View && window.AdobeDC.View.Enum && window.AdobeDC.View.Enum.CallbackType) || {};
 
-      // Page info callback with error handling
+      // // Page info callback with error handling
+      // try {
+      //    if (CallbackType.PAGE_VIEW_CHANGE) {
+      //     adobeDCView.registerCallback(
+      //       CallbackType.PAGE_VIEW_CHANGE,
+      //       (data) => {
+      //         if (data && typeof data.pageNumber === 'number') {
+      //           setCurrentPage(data.pageNumber);
+      //         }
+      //         if (data && typeof data.totalPages === 'number') {
+      //           setTotalPages(data.totalPages);
+      //         }
+      //       },
+      //       false
+      //     );
+      //   }
+      // } catch (error) {
+      //   console.warn('Could not register page info callback:', error);
+      // }     
+     
+      /* 1. UNIFIED PAGE VIEW CALLBACK */
       try {
-         if (CallbackType.PAGE_VIEW_CHANGE) {
+        if (CallbackType.PAGE_VIEW_CHANGE) {
           adobeDCView.registerCallback(
             CallbackType.PAGE_VIEW_CHANGE,
             (data) => {
               if (data && typeof data.pageNumber === 'number') {
+                // A. Update the REF (This is for logic/event listeners - NO re-render)
+                currentPageRef.current = data.pageNumber; 
+                
+                // B. Update the STATE (This is for the UI/Toolbar - Re-renders only the UI)
                 setCurrentPage(data.pageNumber);
               }
               if (data && typeof data.totalPages === 'number') {
                 setTotalPages(data.totalPages);
               }
             },
-            false
+            { enablePageChanges: true } // Some SDK versions prefer this options object
           );
         }
       } catch (error) {
-        console.warn('Could not register page info callback:', error);
+        console.warn('Unified Page Info registration failed:', error);
       }
 
       // Text selection callback with error handling
@@ -265,6 +290,24 @@ const AdobePDFViewer = ({ documentId }) => {
       } catch (error) {
         console.warn('Could not register text selection callback:', error);
       }
+
+      // /* 2. UNIFIED SELECTION CALLBACK */
+      // adobeDCView.registerCallback(
+      //   CallbackType.TEXT_SELECTION_END,
+      //   (event) => {
+      //     // We use .current to get the FRESH page number without needing a re-render
+      //     const freshPage = currentPageRef.current; 
+          
+      //     console.log(`✅ Text Selected on Page ${freshPage}:`, event.data.text);
+          
+      //     handleTextSelection(
+      //       event.data.text,
+      //       { x: event.clientX || 0, y: event.clientY || 0 },
+      //       { pageNumber: freshPage, documentId: documentId }
+      //     );
+      //   },
+      //   { enableTextSelectionEvents: true }
+      // );
 
       // Store the viewer instance and set initial zoom level
       await previewPromise;
