@@ -113,218 +113,218 @@ const AdobePDFViewer = ({ documentId }) => {
       // Wait for Adobe API to be ready
       await waitForAdobeAPI();
       
+      // 1. Resolve API Key (Fixed for Vite/React compatibility)
       const clientId =
-        import.meta.env.VITE_ADOBE_EMBED_API_KEY ||
-        import.meta.env.VITE_ADOBE_API_KEY ||
-        import.meta.env.REACT_APP_ADOBE_API_KEY;
+        import.meta.env.VITE_ADOBE_EMBED_API_KEY ;
       
       if (!clientId) {
         throw new Error('Adobe API key not found. Please set VITE_ADOBE_API_KEY environment variable.');
       }
 
+      // 2. Prepare Container
       // Clear previous viewer if it exists
       if (viewerRef.current) {
         viewerRef.current.innerHTML = '';
       }
-
-      // Create a new viewer instance
+      
+      // 3. Create the View Shell  / Create a new viewer instance
       const adobeDCView = new window.AdobeDC.View({
         clientId: clientId,
         divId: 'adobe-dc-view',
       });
 
       // Prepare file as an ArrayBuffer promise for local file usage
-      let filePromise;
+      // let filePromise;
       
-      if (currentPDF.file?.arrayBuffer) {
-        // It's a proper File object - validate first
-        filePromise = validatePDFFile(currentPDF.file).catch(error => {
-          console.error('PDF validation failed:', error);
-          throw new Error('PDF file validation failed: ' + error.message);
-        });
-      } else if (currentPDF.file?.url) {
-        // It's a URL-based file reference - fetch and validate
-        filePromise = fetch(currentPDF.file.url)
-          .then(response => {
-            if (!response.ok) {
-              throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`);
-            }
-            return response.arrayBuffer();
-          })
-          .then(arrayBuffer => {
-            // Validate the PDF content directly
-            const uint8Array = new Uint8Array(arrayBuffer);
+      // if (currentPDF.file?.arrayBuffer) {
+      //   // It's a proper File object - validate first
+      //   filePromise = validatePDFFile(currentPDF.file).catch(error => {
+      //     console.error('PDF validation failed:', error);
+      //     throw new Error('PDF file validation failed: ' + error.message);
+      //   });
+      // } else if (currentPDF.file?.url) {
+      //   // It's a URL-based file reference - fetch and validate
+      //   filePromise = fetch(currentPDF.file.url)
+      //     .then(response => {
+      //       if (!response.ok) {
+      //         throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`);
+      //       }
+      //       return response.arrayBuffer();
+      //     })
+      //     .then(arrayBuffer => {
+      //       // Validate the PDF content directly
+      //       const uint8Array = new Uint8Array(arrayBuffer);
             
-            // Check PDF header (first 4 bytes should be %PDF)
-            if (uint8Array.length < 4) {
-              throw new Error('File is too small to be a valid PDF');
-            }
+      //       // Check PDF header (first 4 bytes should be %PDF)
+      //       if (uint8Array.length < 4) {
+      //         throw new Error('File is too small to be a valid PDF');
+      //       }
             
-            const header = String.fromCharCode(uint8Array[0], uint8Array[1], uint8Array[2], uint8Array[3]);
-            if (header !== '%PDF') {
-              throw new Error('File does not appear to be a valid PDF (missing PDF header)');
-            }
+      //       const header = String.fromCharCode(uint8Array[0], uint8Array[1], uint8Array[2], uint8Array[3]);
+      //       if (header !== '%PDF') {
+      //         throw new Error('File does not appear to be a valid PDF (missing PDF header)');
+      //       }
             
-            console.log('PDF validation passed for URL-based file:', { size: arrayBuffer.byteLength });
-            return arrayBuffer;
-          })
-          .catch(error => {
-            console.error('Error fetching or validating PDF from URL:', error);
-            throw new Error('Failed to load PDF from server: ' + error.message);
-          });
-      } else if (currentPDF.file) {
-        // It's a File object without arrayBuffer method - validate first
-        filePromise = validatePDFFile(currentPDF.file).catch(error => {
-          console.error('PDF validation failed:', error);
-          throw new Error('PDF file validation failed: ' + error.message);
-        });
-      } else {
-        throw new Error('No file available for viewing');
-      }
+      //       console.log('PDF validation passed for URL-based file:', { size: arrayBuffer.byteLength });
+      //       return arrayBuffer;
+      //     })
+      //     .catch(error => {
+      //       console.error('Error fetching or validating PDF from URL:', error);
+      //       throw new Error('Failed to load PDF from server: ' + error.message);
+      //     });
+      // } else if (currentPDF.file) {
+      //   // It's a File object without arrayBuffer method - validate first
+      //   filePromise = validatePDFFile(currentPDF.file).catch(error => {
+      //     console.error('PDF validation failed:', error);
+      //     throw new Error('PDF file validation failed: ' + error.message);
+      //   });
+      // } else {
+      //   throw new Error('No file available for viewing');
+      // }
 
-      const previewConfig = {
-        embedMode: 'SIZED_CONTAINER',
-        defaultViewMode: 'FIT_WIDTH',
-        showDownloadPDF: false,
-        showPrintPDF: false,
-        showLeftHandPanel: false,
-        showAnnotationTools: false,
-        enableFormFilling: false,
-        showBookmarks: false,
-        showThumbnails: false,
-        enableAnnotationAPIs: false,
-        enableFormFillingAPIs: false,
-        enableDigitalSignatures: false,
-        enableEditingAPIs: false,
-        enableAccessibility: false,
-        enableTextSelectionEvents: true, // MUST be true here
-      };
+//CURRENT NOT USING THIS CONFIG ; DIRECTLTY PASSING OPTIONS IN previewFile CALL
+      // const previewConfig = {
+      //   embedMode: 'SIZED_CONTAINER',
+      //   defaultViewMode: 'FIT_WIDTH', showDownloadPDF: false,
+      //   showPrintPDF: false, showLeftHandPanel: false,
+      //   showAnnotationTools: false, enableFormFilling: false,
+      //   showBookmarks: false, showThumbnails: false,
+      //   enableAnnotationAPIs: false,
+      //   enableFormFillingAPIs: false,
+      //   enableDigitalSignatures: false,
+      //   enableEditingAPIs: false,
+      //   enableAccessibility: false,
+      //   enableTextSelectionEvents: true, // MUST be true here
+      // };
 
-      // Note: Feature flag registration removed as these callbacks are not supported
-      // by the current version of Adobe PDF Embed API
 
-      // Preview the file using a promise for local files
+      // . Get the direct URL from your backend
+      const fileUrl = currentPDF.file?.url || currentPDF.url || `http://localhost:8000/api/documents/${documentId}/file`;
+      
+      
       const previewPromise = adobeDCView.previewFile(
         {
-          content: {
-            promise: filePromise,
-            mimeType: 'application/pdf'
-          },
-          metaData: {
-            fileName: currentPDF.name
-          }
+          content: {location: { url: fileUrl }},
+          metaData: { fileName: currentPDF.name }
         },
-        previewConfig
+        { 
+        embedMode: 'SIZED_CONTAINER', 
+        defaultViewMode: 'FIT_WIDTH',
+        enableTextSelectionEvents: true // CRITICAL: This enables the events
+        }
       );
 
       // Set up event listeners only if supported by this SDK build
       const CallbackType =
-        (window.AdobeDC && window.AdobeDC.View && window.AdobeDC.View.Enum && window.AdobeDC.View.Enum.CallbackType) || {};
-
-      // // Page info callback with error handling
+        (window.AdobeDC && window.AdobeDC.View && window.AdobeDC.View.Enum && window.AdobeDC.View.Enum.CallbackType) || {}; 
+     
+      // /* 1. UNIFIED PAGE VIEW CALLBACK */
       // try {
-      //    if (CallbackType.PAGE_VIEW_CHANGE) {
+      //   if (CallbackType.PAGE_VIEW_CHANGE) {
       //     adobeDCView.registerCallback(
       //       CallbackType.PAGE_VIEW_CHANGE,
       //       (data) => {
       //         if (data && typeof data.pageNumber === 'number') {
+      //           // A. Update the REF (This is for logic/event listeners - NO re-render)
+      //           currentPageRef.current = data.pageNumber; 
+                
+      //           // B. Update the STATE (This is for the UI/Toolbar - Re-renders only the UI)
       //           setCurrentPage(data.pageNumber);
       //         }
       //         if (data && typeof data.totalPages === 'number') {
       //           setTotalPages(data.totalPages);
       //         }
       //       },
-      //       false
+      //       { enablePageChanges: true } // Some SDK versions prefer this options object
       //     );
       //   }
       // } catch (error) {
-      //   console.warn('Could not register page info callback:', error);
-      // }     
-     
-      /* 1. UNIFIED PAGE VIEW CALLBACK */
-      try {
-        if (CallbackType.PAGE_VIEW_CHANGE) {
-          adobeDCView.registerCallback(
-            CallbackType.PAGE_VIEW_CHANGE,
-            (data) => {
-              if (data && typeof data.pageNumber === 'number') {
-                // A. Update the REF (This is for logic/event listeners - NO re-render)
-                currentPageRef.current = data.pageNumber; 
-                
-                // B. Update the STATE (This is for the UI/Toolbar - Re-renders only the UI)
-                setCurrentPage(data.pageNumber);
-              }
-              if (data && typeof data.totalPages === 'number') {
-                setTotalPages(data.totalPages);
-              }
-            },
-            { enablePageChanges: true } // Some SDK versions prefer this options object
-          );
-        }
-      } catch (error) {
-        console.warn('Unified Page Info registration failed:', error);
-      }
+      //   console.warn('Unified Page Info registration failed:', error);
+      // }
 
-      // Text selection callback with error handling
-      try {
-        //Sometimes Adobe uses TEXT_SELECTED instead of TEXT_SELECTION_END depending on the version.
-        const selectionCallback = CallbackType.TEXT_SELECTION_END || CallbackType.TEXT_SELECTED;  
-        if (selectionCallback) {
-          adobeDCView.registerCallback(
-            selectionCallback,
+      // // Text selection callback with error handling
+      // try {
+      //   //Sometimes Adobe uses TEXT_SELECTED instead of TEXT_SELECTION_END depending on the version.
+      //   const selectionCallback = CallbackType.TEXT_SELECTION_END || CallbackType.TEXT_SELECTED;  
+      //   if (selectionCallback) {
+      //     adobeDCView.registerCallback(
+      //       selectionCallback,
+      //       (event) => {
+
+      //         // log to confirm which callback is being used and adobe is catching the highlight
+      //         console.log('Text selection event received:', event);
+      //         if (event && event.data && event.data.text) {
+      //           handleTextSelection(
+      //             event.data.text,
+      //             { x: event.clientX || 0 , y: event.clientY || 0 },
+      //             { pageNumber: currentPage, documentId: documentId }
+      //           );
+      //         }
+      //       },
+      //       { enableTextSelectionEvents: true } // Some SDK versions require this flag
+      //     );
+      //   } 
+      // } catch (error) {
+      //   console.warn('Could not register text selection callback:', error);
+      // }
+
+
+        /* --- THE STABLE WIRING --- */
+      previewPromise.then(viewerInstance => {
+        viewerInstance.getAPIs().then(apis => {
+          
+          // 1. Setup Page Change Listener
+          apis.addEventListener(
+            window.AdobeDC.View.Enum.Events.PAGE_VIEW,
             (event) => {
+              const pageNum = event.data.pageNumber;
+              currentPageRef.current = pageNum; // Silent update (No re-render)
+              setCurrentPage(pageNum); // UI update (Re-render toolbar)
+            }
+          );
 
-              // log to confirm which callback is being used and adobe is catching the highlight
-              console.log('Text selection event received:', event);
-              if (event && event.data && event.data.text) {
+          // 2. Setup Text Selection Listener
+          apis.addEventListener(
+            window.AdobeDC.View.Enum.Events.TEXT_SELECTION_END,
+            (event) => {
+              const selectedTextValue = event.data.text;
+              console.log("✅ Selection Captured from Adobe API:", selectedTextValue);
+              
+              // Check if text is long enough to be meaningful
+              if (selectedTextValue && selectedTextValue.trim().length > 5) {
                 handleTextSelection(
-                  event.data.text,
-                  { x: event.clientX || 0 , y: event.clientY || 0 },
-                  { pageNumber: currentPage, documentId: documentId }
+                  selectedTextValue,
+                  { x: 0, y: 0 }, 
+                  { pageNumber: currentPageRef.current, documentId: documentId }
                 );
               }
-            },
-            { enableTextSelectionEvents: true } // Some SDK versions require this flag
+            }
           );
-        } 
-      } catch (error) {
-        console.warn('Could not register text selection callback:', error);
-      }
 
-      // /* 2. UNIFIED SELECTION CALLBACK */
-      // adobeDCView.registerCallback(
-      //   CallbackType.TEXT_SELECTION_END,
-      //   (event) => {
-      //     // We use .current to get the FRESH page number without needing a re-render
-      //     const freshPage = currentPageRef.current; 
-          
-      //     console.log(`✅ Text Selected on Page ${freshPage}:`, event.data.text);
-          
-      //     handleTextSelection(
-      //       event.data.text,
-      //       { x: event.clientX || 0, y: event.clientY || 0 },
-      //       { pageNumber: freshPage, documentId: documentId }
-      //     );
-      //   },
-      //   { enableTextSelectionEvents: true }
-      // );
+          // Get Metadata for the total pages
+          apis.getPDFMetadata().then(meta => setTotalPages(meta.numPages));
+        });
+      });
 
-      // Store the viewer instance and set initial zoom level
-      await previewPromise;
-      setAdobeViewer(adobeDCView);
-      try {
-        const apis = await adobeDCView.getAPIs();
-        const zoom = await apis.getZoomLevel();
-        setZoomLevel(Math.round(zoom * 100));
-      } catch (_) {
-        // ignore initial zoom fetch failures
-      }
-      setError(null);
 
-    } catch (error) {
-      console.error('Error initializing Adobe PDF viewer:', error);
+
+
+    //   ///  Wait for preview to complete
+    //   await previewPromise;
+    //   setAdobeViewer(adobeDCView);
+    //   try {
+    //     const apis = await adobeDCView.getAPIs();
+    //     const zoom = await apis.getZoomLevel();
+    //     setZoomLevel(Math.round(zoom * 100));
+    //   } catch (_) {
+    //     // ignore initial zoom fetch failures
+    //   }
+    //   setError(null);
+
+    // } catch (error) {
+    //   console.error('Error initializing Adobe PDF viewer:', error);
       
-      // Handle specific Adobe errors
+      // Handle specific Adobe errorsW
       if (error.message?.includes('corrupt') || 
           error.message?.includes('t5::corrupt_data') ||
           error.message?.includes('corruptFile') ||
@@ -342,7 +342,7 @@ const AdobePDFViewer = ({ documentId }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [currentPDF, documentId, handleTextSelection, currentPage]);
+  }, [currentPDF, documentId, handleTextSelection]);
 
   // Adobe API functions
   const zoomIn = useCallback(async () => {
