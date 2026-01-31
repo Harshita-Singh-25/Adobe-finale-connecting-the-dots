@@ -1,6 +1,5 @@
-// components/AdobePDFViewer.jsx
+// components/pdf/AdobePDFViewer.jsx - FIXED VERSION
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-
 import { usePDF } from '../../context/PDFContext';
 import { useSelection } from '../../context/SelectionContext';
 import Loader from '../common/Loader';
@@ -29,61 +28,6 @@ const waitForAdobeAPI = () => {
   });
 };
 
-// Helper function to validate PDF file
-const validatePDFFile = async (file) => {
-  return new Promise((resolve, reject) => {
-    if (!file) {
-      reject(new Error('No file provided'));
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const arrayBuffer = e.target.result;
-        const uint8Array = new Uint8Array(arrayBuffer);
-        
-        // Check PDF header (first 4 bytes should be %PDF)
-        if (uint8Array.length < 4) {
-          reject(new Error('File is too small to be a valid PDF'));
-          return;
-        }
-        
-        const header = String.fromCharCode(uint8Array[0], uint8Array[1], uint8Array[2], uint8Array[3]);
-        if (header !== '%PDF') {
-          reject(new Error('File does not appear to be a valid PDF (missing PDF header)'));
-          return;
-        }
-        
-        // Check for PDF version (should be 1.x)
-        const versionStart = 4;
-        let versionEnd = versionStart;
-        while (versionEnd < uint8Array.length && uint8Array[versionEnd] !== 0x0A && uint8Array[versionEnd] !== 0x0D) {
-          versionEnd++;
-        }
-        
-        const versionBytes = uint8Array.slice(versionStart, versionEnd);
-        const version = String.fromCharCode(...versionBytes);
-        
-        if (!version.match(/^\d+\.\d+$/)) {
-          console.warn('PDF version may be invalid:', version);
-        }
-        
-        console.log('PDF validation passed:', { size: arrayBuffer.byteLength, version });
-        resolve(arrayBuffer);
-      } catch (error) {
-        reject(new Error('Failed to validate PDF file: ' + error.message));
-      }
-    };
-    
-    reader.onerror = () => {
-      reject(new Error('Failed to read file for validation'));
-    };
-    
-    reader.readAsArrayBuffer(file);
-  });
-};
-
 const AdobePDFViewer = ({ documentId }) => {
   const viewerRef = useRef(null);
   const [adobeViewer, setAdobeViewer] = useState(null);
@@ -97,9 +41,6 @@ const AdobePDFViewer = ({ documentId }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const currentPageRef = useRef(1);
 
-
-
-  // Initialize Adobe Viewer
   const initializeAdobeViewer = useCallback(async () => {
     if (!currentPDF || !viewerRef.current) {
       setIsLoading(false);
@@ -110,244 +51,117 @@ const AdobePDFViewer = ({ documentId }) => {
     setError(null);
 
     try {
-      // Wait for Adobe API to be ready
       await waitForAdobeAPI();
       
-      // 1. Resolve API Key (Fixed for Vite/React compatibility)
-      const clientId =
-        import.meta.env.VITE_ADOBE_EMBED_API_KEY ;
-      
-      if (!clientId) {
-        throw new Error('Adobe API key not found. Please set VITE_ADOBE_API_KEY environment variable.');
-      }
+      const clientId = import.meta.env.VITE_ADOBE_EMBED_API_KEY || import.meta.env.VITE_ADOBE_API_KEY;
+      if (!clientId) throw new Error('Adobe API key missing from .env');
 
-      // 2. Prepare Container
-      // Clear previous viewer if it exists
-      if (viewerRef.current) {
-        viewerRef.current.innerHTML = '';
-      }
-      
-      // 3. Create the View Shell  / Create a new viewer instance
+      viewerRef.current.innerHTML = ''; 
+
       const adobeDCView = new window.AdobeDC.View({
         clientId: clientId,
         divId: 'adobe-dc-view',
       });
 
-      // Prepare file as an ArrayBuffer promise for local file usage
-      // let filePromise;
-      
-      // if (currentPDF.file?.arrayBuffer) {
-      //   // It's a proper File object - validate first
-      //   filePromise = validatePDFFile(currentPDF.file).catch(error => {
-      //     console.error('PDF validation failed:', error);
-      //     throw new Error('PDF file validation failed: ' + error.message);
-      //   });
-      // } else if (currentPDF.file?.url) {
-      //   // It's a URL-based file reference - fetch and validate
-      //   filePromise = fetch(currentPDF.file.url)
-      //     .then(response => {
-      //       if (!response.ok) {
-      //         throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`);
-      //       }
-      //       return response.arrayBuffer();
-      //     })
-      //     .then(arrayBuffer => {
-      //       // Validate the PDF content directly
-      //       const uint8Array = new Uint8Array(arrayBuffer);
-            
-      //       // Check PDF header (first 4 bytes should be %PDF)
-      //       if (uint8Array.length < 4) {
-      //         throw new Error('File is too small to be a valid PDF');
-      //       }
-            
-      //       const header = String.fromCharCode(uint8Array[0], uint8Array[1], uint8Array[2], uint8Array[3]);
-      //       if (header !== '%PDF') {
-      //         throw new Error('File does not appear to be a valid PDF (missing PDF header)');
-      //       }
-            
-      //       console.log('PDF validation passed for URL-based file:', { size: arrayBuffer.byteLength });
-      //       return arrayBuffer;
-      //     })
-      //     .catch(error => {
-      //       console.error('Error fetching or validating PDF from URL:', error);
-      //       throw new Error('Failed to load PDF from server: ' + error.message);
-      //     });
-      // } else if (currentPDF.file) {
-      //   // It's a File object without arrayBuffer method - validate first
-      //   filePromise = validatePDFFile(currentPDF.file).catch(error => {
-      //     console.error('PDF validation failed:', error);
-      //     throw new Error('PDF file validation failed: ' + error.message);
-      //   });
-      // } else {
-      //   throw new Error('No file available for viewing');
-      // }
-
-//CURRENT NOT USING THIS CONFIG ; DIRECTLTY PASSING OPTIONS IN previewFile CALL
-      // const previewConfig = {
-      //   embedMode: 'SIZED_CONTAINER',
-      //   defaultViewMode: 'FIT_WIDTH', showDownloadPDF: false,
-      //   showPrintPDF: false, showLeftHandPanel: false,
-      //   showAnnotationTools: false, enableFormFilling: false,
-      //   showBookmarks: false, showThumbnails: false,
-      //   enableAnnotationAPIs: false,
-      //   enableFormFillingAPIs: false,
-      //   enableDigitalSignatures: false,
-      //   enableEditingAPIs: false,
-      //   enableAccessibility: false,
-      //   enableTextSelectionEvents: true, // MUST be true here
-      // };
-
-
-      // . Get the direct URL from your backend
       const fileUrl = currentPDF.file?.url || currentPDF.url || `http://localhost:8000/api/documents/${documentId}/file`;
-      
-      
+
       const previewPromise = adobeDCView.previewFile(
         {
-          content: {location: { url: fileUrl }},
+          content: { location: { url: fileUrl } },
           metaData: { fileName: currentPDF.name }
         },
         { 
-        embedMode: 'SIZED_CONTAINER', 
-        defaultViewMode: 'FIT_WIDTH',
-        enableTextSelectionEvents: true // CRITICAL: This enables the events
+          embedMode: 'SIZED_CONTAINER', 
+          defaultViewMode: 'FIT_WIDTH'
         }
       );
 
-      // Set up event listeners only if supported by this SDK build
-      const CallbackType =
-        (window.AdobeDC && window.AdobeDC.View && window.AdobeDC.View.Enum && window.AdobeDC.View.Enum.CallbackType) || {}; 
-     
-      // /* 1. UNIFIED PAGE VIEW CALLBACK */
-      // try {
-      //   if (CallbackType.PAGE_VIEW_CHANGE) {
-      //     adobeDCView.registerCallback(
-      //       CallbackType.PAGE_VIEW_CHANGE,
-      //       (data) => {
-      //         if (data && typeof data.pageNumber === 'number') {
-      //           // A. Update the REF (This is for logic/event listeners - NO re-render)
-      //           currentPageRef.current = data.pageNumber; 
-                
-      //           // B. Update the STATE (This is for the UI/Toolbar - Re-renders only the UI)
-      //           setCurrentPage(data.pageNumber);
-      //         }
-      //         if (data && typeof data.totalPages === 'number') {
-      //           setTotalPages(data.totalPages);
-      //         }
-      //       },
-      //       { enablePageChanges: true } // Some SDK versions prefer this options object
-      //     );
-      //   }
-      // } catch (error) {
-      //   console.warn('Unified Page Info registration failed:', error);
-      // }
-
-      // // Text selection callback with error handling
-      // try {
-      //   //Sometimes Adobe uses TEXT_SELECTED instead of TEXT_SELECTION_END depending on the version.
-      //   const selectionCallback = CallbackType.TEXT_SELECTION_END || CallbackType.TEXT_SELECTED;  
-      //   if (selectionCallback) {
-      //     adobeDCView.registerCallback(
-      //       selectionCallback,
-      //       (event) => {
-
-      //         // log to confirm which callback is being used and adobe is catching the highlight
-      //         console.log('Text selection event received:', event);
-      //         if (event && event.data && event.data.text) {
-      //           handleTextSelection(
-      //             event.data.text,
-      //             { x: event.clientX || 0 , y: event.clientY || 0 },
-      //             { pageNumber: currentPage, documentId: documentId }
-      //           );
-      //         }
-      //       },
-      //       { enableTextSelectionEvents: true } // Some SDK versions require this flag
-      //     );
-      //   } 
-      // } catch (error) {
-      //   console.warn('Could not register text selection callback:', error);
-      // }
-
-
-        /* --- THE STABLE WIRING --- */
-      previewPromise.then(viewerInstance => {
-        viewerInstance.getAPIs().then(apis => {
+      previewPromise.then((adobeViewerInstance) => {
+        console.log("✅ PDF successfully rendered");
+        
+        adobeViewerInstance.getAPIs().then((apis) => {
+          console.log("✅ APIs obtained");
           
-          // 1. Setup Page Change Listener
-          apis.addEventListener(
-            window.AdobeDC.View.Enum.Events.PAGE_VIEW,
-            (event) => {
-              const pageNum = event.data.pageNumber;
-              currentPageRef.current = pageNum; // Silent update (No re-render)
-              setCurrentPage(pageNum); // UI update (Re-render toolbar)
-            }
-          );
+          apis.getPDFMetadata().then((metadata) => {
+            setTotalPages(metadata.numPages);
+            console.log("Total pages:", metadata.numPages);
+          }).catch(err => {
+            console.warn("Could not get metadata:", err);
+          });
 
-          // 2. Setup Text Selection Listener
-          apis.addEventListener(
-            window.AdobeDC.View.Enum.Events.TEXT_SELECTION_END,
-            (event) => {
-              const selectedTextValue = event.data.text;
-              console.log("✅ Selection Captured from Adobe API:", selectedTextValue);
-              
-              // Check if text is long enough to be meaningful
-              if (selectedTextValue && selectedTextValue.trim().length > 5) {
-                handleTextSelection(
-                  selectedTextValue,
-                  { x: 0, y: 0 }, 
-                  { pageNumber: currentPageRef.current, documentId: documentId }
-                );
-              }
+          // Set up periodic page monitoring
+          const pageMonitorInterval = setInterval(() => {
+            if (apis && apis.getCurrentPage) {
+              apis.getCurrentPage()
+                .then((page) => {
+                  currentPageRef.current = page;
+                  setCurrentPage(page);
+                })
+                .catch(() => {
+                  // Silently handle errors
+                });
             }
-          );
+          }, 1000);
 
-          // Get Metadata for the total pages
-          apis.getPDFMetadata().then(meta => setTotalPages(meta.numPages));
+          (apis)._pageMonitorInterval = pageMonitorInterval;
+
+        }).catch((err) => {
+          console.error("❌ Failed to get APIs:", err);
         });
+      }).catch((err) => {
+        console.error("❌ Preview failed:", err);
+        setError(err.message || 'Failed to load PDF preview');
       });
 
+      setAdobeViewer(adobeDCView);
 
-
-
-    //   ///  Wait for preview to complete
-    //   await previewPromise;
-    //   setAdobeViewer(adobeDCView);
-    //   try {
-    //     const apis = await adobeDCView.getAPIs();
-    //     const zoom = await apis.getZoomLevel();
-    //     setZoomLevel(Math.round(zoom * 100));
-    //   } catch (_) {
-    //     // ignore initial zoom fetch failures
-    //   }
-    //   setError(null);
-
-    // } catch (error) {
-    //   console.error('Error initializing Adobe PDF viewer:', error);
-      
-      // Handle specific Adobe errorsW
-      if (error.message?.includes('corrupt') || 
-          error.message?.includes('t5::corrupt_data') ||
-          error.message?.includes('corruptFile') ||
-          error.message?.includes('corrupt_data')) {
-        setError('PDF file appears to be corrupted or invalid. Please try uploading a different PDF file or re-upload the current one.');
-      } else if (error.message?.includes('Failed to fetch PDF')) {
-        setError('Failed to load PDF file from server. Please try again.');
-      } else if (error.message?.includes('Failed to read PDF file')) {
-        setError('Failed to read PDF file. The file may be corrupted or in an unsupported format.');
-      } else if (error.message?.includes('Adobe API key')) {
-        setError('Adobe API key not configured. Please check your environment variables.');
-      } else {
-        setError(error.message || 'Failed to initialize PDF viewer. Please check your Adobe API key and internet connection.');
-      }
+    } catch (err) {
+      console.error('Adobe Init Error:', err);
+      setError(err?.message || 'Failed to initialize PDF viewer.');
     } finally {
       setIsLoading(false);
     }
-  }, [currentPDF, documentId, handleTextSelection]);
+  }, [currentPDF?.id, documentId]);
 
-  // Adobe API functions
+  // ==========================================
+  // TEXT SELECTION - Using Browser API
+  // ==========================================
+  useEffect(() => {
+    const handleTextSelectionEvent = () => {
+      const selection = window.getSelection();
+      const selectedText = selection?.toString().trim();
+      
+      if (selectedText && selectedText.length > 5) {
+        console.log("✅ Text selected:", selectedText);
+        handleTextSelection(
+          selectedText,
+          { x: 0, y: 0 },
+          { pageNumber: currentPageRef.current, documentId: documentId }
+        );
+      }
+    };
+
+    const container = document.getElementById('adobe-dc-view');
+    if (container) {
+      container.addEventListener('mouseup', handleTextSelectionEvent);
+      
+      return () => {
+        container.removeEventListener('mouseup', handleTextSelectionEvent);
+      };
+    }
+  }, [documentId, handleTextSelection]);
+
+  // Cleanup page monitoring on unmount
+  useEffect(() => {
+    return () => {
+      if (adobeViewer && adobeViewer._pageMonitorInterval) {
+        clearInterval(adobeViewer._pageMonitorInterval);
+      }
+    };
+  }, [adobeViewer]);
+
   const zoomIn = useCallback(async () => {
     if (!adobeViewer) return;
-    
     try {
       const apis = await adobeViewer.getAPIs();
       const currentZoom = await apis.getZoomLevel();
@@ -361,7 +175,6 @@ const AdobePDFViewer = ({ documentId }) => {
 
   const zoomOut = useCallback(async () => {
     if (!adobeViewer) return;
-    
     try {
       const apis = await adobeViewer.getAPIs();
       const currentZoom = await apis.getZoomLevel();
@@ -375,7 +188,6 @@ const AdobePDFViewer = ({ documentId }) => {
 
   const goToPage = useCallback(async (pageNumber) => {
     if (!adobeViewer || pageNumber < 1 || pageNumber > totalPages) return;
-    
     try {
       const apis = await adobeViewer.getAPIs();
       await apis.gotoLocation({ page: pageNumber });
@@ -394,7 +206,6 @@ const AdobePDFViewer = ({ documentId }) => {
 
   const toggleFullScreen = useCallback(async () => {
     if (!adobeViewer) return;
-    
     try {
       const apis = await adobeViewer.getAPIs();
       if (isFullScreen) {
@@ -408,10 +219,8 @@ const AdobePDFViewer = ({ documentId }) => {
     }
   }, [adobeViewer, isFullScreen]);
 
-  // Re-initialize when currentPDF changes
   useEffect(() => {
     initializeAdobeViewer();
-
     return () => {};
   }, [initializeAdobeViewer, currentPDF]);
 
@@ -431,7 +240,6 @@ const AdobePDFViewer = ({ documentId }) => {
 
   return (
     <div className="flex flex-col h-full bg-white border border-gray-200 rounded-lg overflow-hidden">
-      {/* Toolbar */}
       <div className="flex items-center justify-between p-3 bg-gray-50 border-b border-gray-200">
         <div className="flex items-center space-x-2 min-w-0 flex-1">
           <h2 className="text-sm font-medium text-gray-900 truncate">
@@ -443,7 +251,6 @@ const AdobePDFViewer = ({ documentId }) => {
         </div>
 
         <div className="flex items-center space-x-2">
-          {/* Page Navigation */}
           <div className="flex items-center space-x-1 bg-white border border-gray-300 rounded-md p-1">
             <Button
               variant="ghost"
@@ -474,7 +281,6 @@ const AdobePDFViewer = ({ documentId }) => {
             </Button>
           </div>
 
-          {/* Zoom Controls */}
           <div className="flex items-center space-x-1 bg-white border border-gray-300 rounded-md p-1">
             <Button
               variant="ghost"
@@ -503,7 +309,6 @@ const AdobePDFViewer = ({ documentId }) => {
             </Button>
           </div>
 
-          {/* Full Screen Toggle */}
           <Button
             variant="ghost"
             size="sm"
@@ -516,7 +321,6 @@ const AdobePDFViewer = ({ documentId }) => {
         </div>
       </div>
 
-      {/* PDF Viewer Container */}
       <div className="flex-1 relative">
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-90 z-10">
@@ -555,7 +359,6 @@ const AdobePDFViewer = ({ documentId }) => {
         />
       </div>
 
-      {/* Status Bar */}
       <div className="px-3 py-2 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
         <div className="flex items-center justify-between">
           <span>Powered by Adobe PDF Embed API</span>
@@ -566,7 +369,6 @@ const AdobePDFViewer = ({ documentId }) => {
   );
 };
 
-// Helper function to format file size
 const formatFileSize = (bytes) => {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
