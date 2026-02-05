@@ -1,4 +1,5 @@
-// components/pdf/AdobePDFViewer.jsx - FIXED VERSION
+// components/pdf/AdobePDFViewer.jsx - NATIVE SELECTION VERSION
+
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { usePDF } from '../../context/PDFContext';
 import { useSelection } from '../../context/SelectionContext';
@@ -6,7 +7,6 @@ import Loader from '../common/Loader';
 import { Button } from '../common/Button';
 import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Maximize, Minus, Search } from 'lucide-react';
 
-// Helper function to wait for Adobe API
 const waitForAdobeAPI = () => {
   return new Promise((resolve, reject) => {
     if (window.AdobeDC && window.AdobeDC.View) {
@@ -65,7 +65,10 @@ const AdobePDFViewer = ({ documentId }) => {
 
       const fileUrl = currentPDF.file?.url || currentPDF.url || `http://localhost:8000/api/documents/${documentId}/file`;
 
-      const previewPromise = adobeDCView.previewFile(
+      console.log("🔧 Initializing Adobe PDF Viewer...");
+      console.log("📄 File URL:", fileUrl);
+
+      const adobeViewerInstance = await adobeDCView.previewFile(
         {
           content: { location: { url: fileUrl } },
           metaData: { fileName: currentPDF.name }
@@ -76,47 +79,43 @@ const AdobePDFViewer = ({ documentId }) => {
         }
       );
 
-      previewPromise.then((adobeViewerInstance) => {
-        console.log("✅ PDF successfully rendered");
-        
-        adobeViewerInstance.getAPIs().then((apis) => {
-          console.log("✅ APIs obtained");
-          
-          apis.getPDFMetadata().then((metadata) => {
-            setTotalPages(metadata.numPages);
-            console.log("Total pages:", metadata.numPages);
-          }).catch(err => {
-            console.warn("Could not get metadata:", err);
-          });
+      console.log("✅ PDF successfully rendered");
 
-          // Set up periodic page monitoring
-          const pageMonitorInterval = setInterval(() => {
-            if (apis && apis.getCurrentPage) {
-              apis.getCurrentPage()
-                .then((page) => {
+      adobeViewerInstance.getAPIs().then((apis) => {
+        console.log("✅ APIs obtained");
+        
+        apis.getPDFMetadata().then((metadata) => {
+          setTotalPages(metadata.numPages);
+          console.log("📊 Total pages:", metadata.numPages);
+        }).catch(err => {
+          console.warn("⚠️ Could not get metadata:", err);
+        });
+
+        // Set up periodic page monitoring
+        const pageMonitorInterval = setInterval(() => {
+          if (apis && apis.getCurrentPage) {
+            apis.getCurrentPage()
+              .then((page) => {
+                if (currentPageRef.current !== page) {
                   currentPageRef.current = page;
                   setCurrentPage(page);
-                })
-                .catch(() => {
-                  // Silently handle errors
-                });
-            }
-          }, 1000);
+                  console.log("📄 Current page:", page);
+                }
+              })
+              .catch(() => {});
+          }
+        }, 1000);
 
-          (apis)._pageMonitorInterval = pageMonitorInterval;
+        apis._pageMonitorInterval = pageMonitorInterval;
 
-        }).catch((err) => {
-          console.error("❌ Failed to get APIs:", err);
-        });
       }).catch((err) => {
-        console.error("❌ Preview failed:", err);
-        setError(err.message || 'Failed to load PDF preview');
+        console.error("❌ Failed to get APIs:", err);
       });
 
-      setAdobeViewer(adobeDCView);
+      setAdobeViewer(adobeViewerInstance);
 
     } catch (err) {
-      console.error('Adobe Init Error:', err);
+      console.error('❌ Adobe Init Error:', err);
       setError(err?.message || 'Failed to initialize PDF viewer.');
     } finally {
       setIsLoading(false);
@@ -124,38 +123,81 @@ const AdobePDFViewer = ({ documentId }) => {
   }, [currentPDF?.id, documentId]);
 
   // ==========================================
-  // TEXT SELECTION - Using Browser API
+  // NATIVE BROWSER SELECTION - THE REAL SOLUTION
   // ==========================================
   useEffect(() => {
-    const handleTextSelectionEvent = () => {
-      const selection = window.getSelection();
-      const selectedText = selection?.toString().trim();
+    console.log("🎯 Setting up NATIVE selection handlers...");
+
+    let selectionTimeout;
+
+    const captureSelection = () => {
+      // Clear any pending timeout
+      clearTimeout(selectionTimeout);
       
-      if (selectedText && selectedText.length > 5) {
-        console.log("✅ Text selected:", selectedText);
-        handleTextSelection(
-          selectedText,
-          { x: 0, y: 0 },
-          { pageNumber: currentPageRef.current, documentId: documentId }
-        );
-      }
+      // Wait a bit for selection to stabilize
+      selectionTimeout = setTimeout(() => {
+        const selection = window.getSelection();
+        const selectedText = selection?.toString().trim();
+        
+        console.log("🔍 Selection captured:");
+        console.log("  - Text length:", selectedText?.length || 0);
+        console.log("  - Text preview:", selectedText?.substring(0, 50) || "(empty)");
+        console.log("  - Current page:", currentPageRef.current);
+        console.log("  - Document ID:", documentId);
+        
+        if (selectedText && selectedText.length > 5) {
+          console.log("✅ VALID SELECTION - Calling handleTextSelection");
+          console.log("📝 Full text:", selectedText);
+          
+          handleTextSelection(
+            selectedText,
+            { x: 0, y: 0 },
+            {
+              pageNumber: currentPageRef.current,
+              documentId: documentId,
+              source: 'native-browser',
+              timestamp: new Date().toISOString()
+            }
+          );
+        } else {
+          console.log("❌ Selection too short, ignoring");
+        }
+      }, 200); // Wait 200ms after selection ends
     };
 
-    const container = document.getElementById('adobe-dc-view');
-    if (container) {
-      container.addEventListener('mouseup', handleTextSelectionEvent);
-      
-      return () => {
-        container.removeEventListener('mouseup', handleTextSelectionEvent);
-      };
-    }
+    // Listen for selection changes
+    document.addEventListener('selectionchange', () => {
+      const selection = window.getSelection();
+      if (selection && selection.toString().trim().length > 0) {
+        console.log("📌 Selection in progress...");
+      }
+    });
+
+    // Listen for mouseup (when user releases mouse after selecting)
+    document.addEventListener('mouseup', captureSelection);
+    
+    // Listen for touchend (for mobile/tablet)
+    document.addEventListener('touchend', captureSelection);
+
+    console.log("✅ Native selection handlers attached to document");
+
+    return () => {
+      console.log("🧹 Cleaning up selection handlers");
+      clearTimeout(selectionTimeout);
+      document.removeEventListener('mouseup', captureSelection);
+      document.removeEventListener('touchend', captureSelection);
+    };
   }, [documentId, handleTextSelection]);
 
-  // Cleanup page monitoring on unmount
+  // Cleanup
   useEffect(() => {
     return () => {
-      if (adobeViewer && adobeViewer._pageMonitorInterval) {
-        clearInterval(adobeViewer._pageMonitorInterval);
+      if (adobeViewer && adobeViewer.getAPIs) {
+        adobeViewer.getAPIs().then(apis => {
+          if (apis._pageMonitorInterval) {
+            clearInterval(apis._pageMonitorInterval);
+          }
+        }).catch(() => {});
       }
     };
   }, [adobeViewer]);
