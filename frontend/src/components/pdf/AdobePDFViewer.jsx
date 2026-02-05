@@ -1,5 +1,4 @@
-// components/pdf/AdobePDFViewer.jsx - NATIVE SELECTION VERSION
-
+// components/pdf/AdobePDFViewer.jsx - FIXED VERSION
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { usePDF } from '../../context/PDFContext';
 import { useSelection } from '../../context/SelectionContext';
@@ -7,6 +6,7 @@ import Loader from '../common/Loader';
 import { Button } from '../common/Button';
 import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Maximize, Minus, Search } from 'lucide-react';
 
+// Helper function to wait for Adobe API
 const waitForAdobeAPI = () => {
   return new Promise((resolve, reject) => {
     if (window.AdobeDC && window.AdobeDC.View) {
@@ -65,9 +65,61 @@ const AdobePDFViewer = ({ documentId }) => {
 
       const fileUrl = currentPDF.file?.url || currentPDF.url || `http://localhost:8000/api/documents/${documentId}/file`;
 
-      console.log("🔧 Initializing Adobe PDF Viewer...");
-      console.log("📄 File URL:", fileUrl);
+      console.log("🔧 STEP 1: Registering callback BEFORE previewFile");
+      
+      // ✅ STEP 1: REGISTER CALLBACK FIRST
+      adobeDCView.registerCallback(
+        window.AdobeDC.View.Enum.CallbackType.EVENT_LISTENER,
+        (event) => {
+          console.log("📡 Adobe Event:", event.type);
 
+          // ✅ THE CORRECT EVENT NAME
+          if (event.type === "PREVIEW_SELECTION_END") {
+            console.log("✅✅✅ TEXT SELECTION DETECTED!");
+            
+            // Use the viewer instance to get selected content
+            if (adobeDCView._viewerInstance) {
+              adobeDCView._viewerInstance.getAPIs().then((apis) => {
+                apis.getSelectedContent().then((result) => {
+                  console.log("📝 Selected Content Result:", result);
+                  
+                  if (result && result.data && result.data.trim().length > 0) {
+                    const selectedText = result.data.trim();
+                    console.log("🎯 Captured text:", selectedText.substring(0, 100));
+                    
+                    handleTextSelection(
+                      selectedText,
+                      { x: 0, y: 0 },
+                      {
+                        pageNumber: currentPageRef.current,
+                        documentId,
+                        source: 'adobe-api'
+                      }
+                    );
+                  }
+                }).catch(err => {
+                  console.error("❌ Error in getSelectedContent:", err);
+                });
+              });
+            }
+          }
+
+          // PAGE CHANGE
+          if (event.type === "PAGE_VIEW") {
+            const page = event.data?.pageNumber;
+            if (page) {
+              currentPageRef.current = page;
+              setCurrentPage(page);
+            }
+          }
+        },
+        { 
+          enableFilePreviewEvents: true, // ✅ CRITICAL FOR SELECTION EVENTS
+          enablePDFAnalytics: false 
+        }
+      );
+
+      console.log("🔧 STEP 2: Previewing file");
       const adobeViewerInstance = await adobeDCView.previewFile(
         {
           content: { location: { url: fileUrl } },
@@ -75,20 +127,29 @@ const AdobePDFViewer = ({ documentId }) => {
         },
         { 
           embedMode: 'SIZED_CONTAINER', 
-          defaultViewMode: 'FIT_WIDTH'
+          defaultViewMode: 'FIT_WIDTH',
+          showDownloadPDF: false,
+          showPrintPDF: false,
+          showLeftHandPanel: false,
+          showAnnotationTools: false,
+          enableTextSelection: true // ✅ Enable text selection
+          
         }
       );
 
       console.log("✅ PDF successfully rendered");
-
+      
+      // Store viewer instance for callback access
+      adobeDCView._viewerInstance = adobeViewerInstance;
+      
       adobeViewerInstance.getAPIs().then((apis) => {
         console.log("✅ APIs obtained");
         
         apis.getPDFMetadata().then((metadata) => {
           setTotalPages(metadata.numPages);
-          console.log("📊 Total pages:", metadata.numPages);
+          console.log("Total pages:", metadata.numPages);
         }).catch(err => {
-          console.warn("⚠️ Could not get metadata:", err);
+          console.warn("Could not get metadata:", err);
         });
 
         // Set up periodic page monitoring
@@ -99,14 +160,15 @@ const AdobePDFViewer = ({ documentId }) => {
                 if (currentPageRef.current !== page) {
                   currentPageRef.current = page;
                   setCurrentPage(page);
-                  console.log("📄 Current page:", page);
                 }
               })
-              .catch(() => {});
+              .catch(() => {
+                // Silently handle errors
+              });
           }
         }, 1000);
 
-        apis._pageMonitorInterval = pageMonitorInterval;
+        (apis)._pageMonitorInterval = pageMonitorInterval;
 
       }).catch((err) => {
         console.error("❌ Failed to get APIs:", err);
@@ -115,89 +177,51 @@ const AdobePDFViewer = ({ documentId }) => {
       setAdobeViewer(adobeViewerInstance);
 
     } catch (err) {
-      console.error('❌ Adobe Init Error:', err);
+      console.error('Adobe Init Error:', err);
       setError(err?.message || 'Failed to initialize PDF viewer.');
     } finally {
       setIsLoading(false);
     }
-  }, [currentPDF?.id, documentId]);
+  }, [currentPDF?.id, documentId, handleTextSelection]);
 
-  // ==========================================
-  // NATIVE BROWSER SELECTION - THE REAL SOLUTION
-  // ==========================================
-  useEffect(() => {
-    console.log("🎯 Setting up NATIVE selection handlers...");
-
-    let selectionTimeout;
-
-    const captureSelection = () => {
-      // Clear any pending timeout
-      clearTimeout(selectionTimeout);
-      
-      // Wait a bit for selection to stabilize
-      selectionTimeout = setTimeout(() => {
-        const selection = window.getSelection();
-        const selectedText = selection?.toString().trim();
-        
-        console.log("🔍 Selection captured:");
-        console.log("  - Text length:", selectedText?.length || 0);
-        console.log("  - Text preview:", selectedText?.substring(0, 50) || "(empty)");
-        console.log("  - Current page:", currentPageRef.current);
-        console.log("  - Document ID:", documentId);
-        
-        if (selectedText && selectedText.length > 5) {
-          console.log("✅ VALID SELECTION - Calling handleTextSelection");
-          console.log("📝 Full text:", selectedText);
+    // ==========================================
+    // THE NATIVE SELECTION BRIDGE (Keep this as fallback)
+    // ==========================================
+    useEffect(() => {
+      const handleNativeSelection = () => {
+        setTimeout(() => {
+          const selection = window.getSelection();
+          const text = selection?.toString().trim();
           
-          handleTextSelection(
-            selectedText,
-            { x: 0, y: 0 },
-            {
-              pageNumber: currentPageRef.current,
-              documentId: documentId,
-              source: 'native-browser',
-              timestamp: new Date().toISOString()
-            }
-          );
-        } else {
-          console.log("❌ Selection too short, ignoring");
-        }
-      }, 200); // Wait 200ms after selection ends
-    };
+          if (text && text.length > 5) {
+            console.log("🚀 NATIVE SELECTION CAPTURED:", text);
+            
+            handleTextSelection(
+              text,
+              { x: 0, y: 0 }, 
+              { 
+                pageNumber: currentPageRef.current, 
+                documentId: documentId 
+              }
+            );
+          }
+        }, 50);
+      };
 
-    // Listen for selection changes
-    document.addEventListener('selectionchange', () => {
-      const selection = window.getSelection();
-      if (selection && selection.toString().trim().length > 0) {
-        console.log("📌 Selection in progress...");
+      const container = document.getElementById('adobe-dc-view');
+      if (container) {
+        container.addEventListener('mouseup', handleNativeSelection);
+        return () => {
+          container.removeEventListener('mouseup', handleNativeSelection);
+        };
       }
-    });
+    }, [documentId, handleTextSelection]);
 
-    // Listen for mouseup (when user releases mouse after selecting)
-    document.addEventListener('mouseup', captureSelection);
-    
-    // Listen for touchend (for mobile/tablet)
-    document.addEventListener('touchend', captureSelection);
-
-    console.log("✅ Native selection handlers attached to document");
-
-    return () => {
-      console.log("🧹 Cleaning up selection handlers");
-      clearTimeout(selectionTimeout);
-      document.removeEventListener('mouseup', captureSelection);
-      document.removeEventListener('touchend', captureSelection);
-    };
-  }, [documentId, handleTextSelection]);
-
-  // Cleanup
+  // Cleanup page monitoring on unmount
   useEffect(() => {
     return () => {
-      if (adobeViewer && adobeViewer.getAPIs) {
-        adobeViewer.getAPIs().then(apis => {
-          if (apis._pageMonitorInterval) {
-            clearInterval(apis._pageMonitorInterval);
-          }
-        }).catch(() => {});
+      if (adobeViewer && adobeViewer._pageMonitorInterval) {
+        clearInterval(adobeViewer._pageMonitorInterval);
       }
     };
   }, [adobeViewer]);
