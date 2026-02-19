@@ -227,7 +227,9 @@ const documentService = {
   findRelatedSections: async (params) => {
     try {
       const response = await apiClient.post('/selection/related', params);
-      return response.data.related_sections || [];
+      const data = response.data || response;        // ✅ handle both cases
+
+      return data.related_sections || [];
     } catch (error) {
       console.error('Failed to find related sections:', error);
       throw new Error('Failed to find related content');
