@@ -135,7 +135,7 @@ try:
     # Include routers with proper prefixes
     app.include_router(health_router, prefix="/api/health", tags=["health"])
     app.include_router(documents_router, prefix="/api/documents", tags=["documents"])
-    app.include_router(selection_router, prefix="/api/search", tags=["search"])
+    app.include_router(selection_router, prefix="/api/selection", tags=["selection"])
     
 except ImportError as e:
     logger.error(f"Failed to import routers: {e}")
