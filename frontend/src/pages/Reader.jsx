@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect , useRef } from 'react';
 import { useParams , useNavigate} from 'react-router-dom';
 import { usePDF } from '../context/PDFContext';
 import { useSelection } from '../context/SelectionContext';
@@ -15,6 +15,7 @@ const Reader = () => {
   const { selectedText } = useSelection();
   const [snippets, setSnippets] = useState([]);
   const [isLoadingSnippets, setIsLoadingSnippets] = useState(false);
+  const pendingPageRef = useRef(null);
 
 
   // Load the document when documentId changes or on Page Refresh
@@ -128,7 +129,7 @@ const Reader = () => {
       {/* Main PDF Viewer Area */}
       <div className="flex-1 p-4">
         <div className="bg-white rounded-lg shadow-md h-full flex flex-col">
-          <AdobePDFViewer documentId={documentId} />
+          <AdobePDFViewer documentId={documentId}  pendingPageRef={pendingPageRef} />
         </div>
       </div>
       
@@ -157,8 +158,21 @@ const Reader = () => {
           <SnippetPanel 
             snippets={snippets}
             isLoading={isLoadingSnippets}
-            onSnippetClick={(snippet) => {
+            onSnippetClick={async (snippet) => {
               console.log('Navigate to snippet:', snippet);
+              const targetDocId = snippet.doc_id;
+              const targetPage = snippet.page_num || snippet.start_page || 1;
+
+              if (targetDocId === currentDocument?.doc_id) {
+                // Same document — just navigate to the page directly
+                // AdobePDFViewer exposes no direct ref, so store pending and re-trigger
+                pendingPageRef.current = targetPage;
+              } else {
+                // Different document — switch first, page navigation happens after viewer reinit
+                pendingPageRef.current = targetPage;
+                await setAsCurrentDocument(targetDocId);
+                navigate(`/reader/${targetDocId}`);
+              }
             }}
           />
         </div>
