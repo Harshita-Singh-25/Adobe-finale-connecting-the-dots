@@ -28,7 +28,7 @@ const waitForAdobeAPI = () => {
   });
 };
 
-const AdobePDFViewer = ({ documentId }) => {
+const AdobePDFViewer = ({ documentId , pendingPageRef  }) => {
   const viewerRef = useRef(null);
   const [adobeViewer, setAdobeViewer] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -151,6 +151,18 @@ const AdobePDFViewer = ({ documentId }) => {
         }).catch(err => {
           console.warn("Could not get metadata:", err);
         });
+
+
+        //  Navigate to pending page after viewer is ready; (WHEN user clicks on the snippet link ; we have to pass the page ref(from the new pdf) to adobe pdf vierwer and when the new pdf is loaded we first check for the pending page ref and then navigate to that page and the realted section and then we clear the pending page ref)
+          if (pendingPageRef?.current) {
+            const targetPage = pendingPageRef.current;
+            pendingPageRef.current = null; // clear it first
+            console.log("📍 Navigating to pending page:", targetPage);
+            // Small delay to ensure viewer is fully rendered before navigating
+            setTimeout(() => {
+              apis.gotoLocation(targetPage);
+            }, 500);
+          }
 
         // Set up periodic page monitoring
         const pageMonitorInterval = setInterval(() => {
